@@ -12,3 +12,4 @@ Team members:
 3. Pratham Mahajan - UE233076
 
 The application will be built in multiple phases which will be added as separate features in the future commits into this repository.
+Thanks
