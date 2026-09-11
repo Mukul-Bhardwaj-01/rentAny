@@ -1,4 +1,25 @@
-# RentAny — Mid-Term Build
+<h1><wbr>
+
+<h1><wbr>
+
+<h1>rentANY
+
+This repository has been created today on the 4th of September 2026.
+It contains the entire code-base for:
+
+"rentAny" : a peer-to-peer rental marketplace where users can list, discover, and rent everyday items on an hourly basis, where users can search for nearby items, compare rental options, book for a specific duration, make secure payments, and manage the complete rental lifecycle from booking to return.
+
+The software is being built as part of the minor project for the session July 2026 - December 2026 (7th semester)
+
+Team members:
+
+1. Mukul Bhardwaj - UE233066
+2. Prashant Yadav - UE233075
+3. Pratham Mahajan - UE233076
+
+Features in this repo will be added as and when they are built, following the gantt chart available in the "rentAny workflow.pdf"
+
+# Mid-term build
 
 This covers the phases due by end of September per the project Gantt chart:
 Requirement Analysis, Frontend Development, Backend & API Development,
@@ -85,7 +106,13 @@ Open the URL Vite prints (usually `http://localhost:5173`).
 3. Go back to the home page — your item should appear in the grid
 4. Try the search box
 
-## Notes for your report / demo
+## 5. How to run it?
+
+1. Open the backend folder in a powershell terminal and enter "npm run dev"
+2. Open the frontend folder in another powershell terminal and enter "npm run dev"
+3. Open http://localhost:5173 in your browser. That's the app.
+
+## Note:
 
 - Passwords are hashed with bcrypt before being stored — never stored in
   plain text.
@@ -95,12 +122,3 @@ Open the URL Vite prints (usually `http://localhost:5173`).
   in a browser-based table editor.
 - Image files never touch our own server disk; multer streams them directly
   to Cloudinary and we store only the resulting URL.
-
-## If something doesn't work
-
-- **`P1001` or connection refused from Prisma**: PostgreSQL isn't running,
-  or `DATABASE_URL` is wrong.
-- **Cloudinary upload fails**: double check the three Cloudinary values in
-  `.env` have no extra spaces/quotes.
-- **CORS error in browser console**: make sure the backend is running on
-  port 5000 (or update `baseURL` in `frontend/src/api/axios.js` to match).
