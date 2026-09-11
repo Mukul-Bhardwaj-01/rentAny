@@ -1,0 +1,38 @@
+// Prisma schema for RentAny — covers only what's needed for the mid-term
+// scope: users (auth) and items (listings with images). Booking, payments,
+// maps and the chatbot are later phases and are intentionally left out.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  createdAt    DateTime @default(now())
+
+  items        Item[]
+}
+
+model Item {
+  id            Int      @id @default(autoincrement())
+  title         String
+  description   String
+  category      String
+  pricePerHour  Float
+  imageUrl      String?
+  location      String
+  isAvailable   Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  owner         User     @relation(fields: [ownerId], references: [id])
+  ownerId       Int
+}
