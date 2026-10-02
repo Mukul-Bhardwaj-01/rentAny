@@ -19,6 +19,8 @@ model User {
   name         String
   email        String   @unique
   passwordHash String
+  // Required at registration (enforced by the API), but kept nullable here
+  // because accounts created before that rule may not have one.
   phone        String?
   createdAt    DateTime @default(now())
 

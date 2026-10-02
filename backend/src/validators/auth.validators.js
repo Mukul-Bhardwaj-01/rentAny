@@ -30,11 +30,12 @@ export function registerValidator(input) {
   else if (Buffer.byteLength(password) > 72) errors.password = "Password is too long";
   else values.password = password;
 
-  checkString(input, "phone", "Phone", { required: false, max: 20 }, values, errors);
+  // Required for new accounts: owners and renters contact each other by phone
+  // once a booking is accepted.
+  checkString(input, "phone", "Phone", { max: 20 }, values, errors);
   if (values.phone !== undefined) {
     const phone = values.phone.replace(/[\s-]/g, "");
-    if (phone === "") delete values.phone;
-    else if (!PHONE_RE.test(phone)) {
+    if (!PHONE_RE.test(phone)) {
       delete values.phone;
       errors.phone = "Phone must be 10–15 digits, optionally starting with +";
     } else values.phone = phone;

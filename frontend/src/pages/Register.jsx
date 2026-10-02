@@ -40,8 +40,12 @@ export default function Register() {
         <input className="border p-2 rounded" placeholder="Email" type="email" required maxLength={254}
           value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         <FieldError message={fieldErrors.email} />
-        <input className="border p-2 rounded" placeholder="Phone (optional)" type="tel" maxLength={20}
+        <input className="border p-2 rounded" placeholder="Phone number * (e.g. 9876543210)" type="tel" required maxLength={20}
+          pattern="\+?[\d\s\-]{10,20}" title="10–15 digits, optionally starting with +"
           value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        <p className="text-xs text-slate-500 -mt-2">
+          Required. Shared with the other person only after a booking is accepted.
+        </p>
         <FieldError message={fieldErrors.phone} />
         <input className="border p-2 rounded" placeholder="Password (min 8 characters)" type="password" required minLength={8}
           value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
