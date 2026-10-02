@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api, { getErrorMessage, getFieldErrors } from "../api/axios.js";
 import { useAuth } from "../context/AuthContext.jsx";
-import ItemImage from "../components/ItemImage.jsx";
 import FieldError from "../components/FieldError.jsx";
+import MediaGallery from "../components/MediaGallery.jsx";
+import ManageMedia from "../components/ManageMedia.jsx";
+import { mediaForItem } from "../utils/media.js";
 import { formatPrice, formatDateTime, toDateTimeLocalValue } from "../utils/format.js";
 
 // Must match the backend's booking rules (booking.validators.js).
@@ -105,12 +107,15 @@ export default function ItemDetail() {
   return (
     <div className="max-w-5xl mx-auto p-6 grid gap-8 md:grid-cols-2">
       <div>
-        <ItemImage src={item.imageUrl} alt={item.title} className="w-full h-72 object-cover rounded-lg" />
+        <MediaGallery media={mediaForItem(item)} title={item.title} />
         <h1 className="text-2xl font-bold mt-4">{item.title}</h1>
         <p className="text-slate-500">{item.category} · {item.location}</p>
         <p className="mt-2 text-xl font-bold">₹{formatPrice(item.pricePerHour)}/hr</p>
         <p className="mt-4 whitespace-pre-line">{item.description}</p>
         <p className="mt-4 text-sm text-slate-500">Listed by {item.owner?.name}</p>
+        {isOwner && (
+          <ManageMedia item={item} onChange={(updated) => setItem({ ...item, ...updated })} />
+        )}
       </div>
 
       <div>

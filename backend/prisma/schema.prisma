@@ -36,6 +36,8 @@ model Item {
   description   String
   category      String
   pricePerHour  Decimal  @db.Decimal(10, 2)
+  // Legacy single image, kept for backward compatibility. Now maintained as
+  // the listing's cover: the first IMAGE in media (null if there is none).
   imageUrl      String?
   location      String
   // Owner's on/off switch for the listing. Whether a specific time slot is
@@ -47,6 +49,29 @@ model Item {
   ownerId       Int
 
   bookings      Booking[]
+  media         ItemMedia[]
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+// Photos and videos of a listing, shown in sortOrder.
+model ItemMedia {
+  id        Int       @id @default(autoincrement())
+  item      Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId    Int
+  type      MediaType
+  url       String
+  // Cloudinary public id, needed to delete the asset. Null only for legacy
+  // images whose URL wasn't a Cloudinary upload of ours.
+  publicId  String?
+  sortOrder Int
+  createdAt DateTime  @default(now())
+
+  // Also serves as the index for loading an item's media in order.
+  @@unique([itemId, sortOrder])
 }
 
 enum BookingStatus {

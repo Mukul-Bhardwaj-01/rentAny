@@ -1,9 +1,22 @@
 import { Router } from "express";
-import { getItems, getItemById, getMyItems, createItem } from "../controllers/item.controller.js";
+import {
+  getItems,
+  getItemById,
+  getMyItems,
+  createItem,
+  requireItemOwner,
+  addItemMedia,
+  deleteItemMedia,
+} from "../controllers/item.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
-import { upload } from "../middleware/upload.middleware.js";
+import { uploadMedia } from "../middleware/upload.middleware.js";
 import { validate } from "../middleware/validate.middleware.js";
-import { createItemValidator, itemIdValidator, listItemsValidator } from "../validators/item.validators.js";
+import {
+  createItemValidator,
+  itemIdValidator,
+  listItemsValidator,
+  itemMediaParamsValidator,
+} from "../validators/item.validators.js";
 import { getItemAvailability } from "../controllers/booking.controller.js";
 import { availabilityValidator } from "../validators/booking.validators.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -20,9 +33,26 @@ router.get(
   validate(availabilityValidator, "query"),
   asyncHandler(getItemAvailability)
 );
-// multer has to parse the multipart body before the text fields can be
-// validated, so the image is uploaded first; the error handler deletes it
-// from Cloudinary if validation or the insert fails.
-router.post("/", requireAuth, upload.single("image"), validate(createItemValidator), asyncHandler(createItem));
+
+// Files land in a temporary folder first; the text fields are validated
+// before anything is uploaded to Cloudinary (see upload.middleware.js).
+router.post("/", requireAuth, uploadMedia, validate(createItemValidator), asyncHandler(createItem));
+
+// Owner-only media management. Ownership is checked before the upload is read.
+router.post(
+  "/:id/media",
+  requireAuth,
+  validate(itemIdValidator, "params"),
+  asyncHandler(requireItemOwner),
+  uploadMedia,
+  asyncHandler(addItemMedia)
+);
+router.delete(
+  "/:id/media/:mediaId",
+  requireAuth,
+  validate(itemMediaParamsValidator, "params"),
+  asyncHandler(requireItemOwner),
+  asyncHandler(deleteItemMedia)
+);
 
 export default router;

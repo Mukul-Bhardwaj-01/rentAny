@@ -45,3 +45,16 @@ export function listItemsValidator(input) {
   checkString(input, "category", "Category", { required: false, max: 50 }, values, errors);
   return { values, errors };
 }
+
+// Params for DELETE /items/:id/media/:mediaId
+export function itemMediaParamsValidator(input) {
+  const errors = {};
+  const values = {};
+  for (const key of ["id", "mediaId"]) {
+    const n = Number(input[key]);
+    if (!/^\d+$/.test(String(input[key])) || !Number.isSafeInteger(n) || n <= 0) {
+      errors[key] = `${key} must be a positive whole number`;
+    } else values[key] = n;
+  }
+  return { values, errors };
+}

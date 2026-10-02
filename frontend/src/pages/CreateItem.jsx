@@ -2,38 +2,17 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api, { getErrorMessage, getFieldErrors } from "../api/axios.js";
 import FieldError from "../components/FieldError.jsx";
-
-// Must match the backend's upload limits (upload.middleware.js).
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+import MediaPicker from "../components/MediaPicker.jsx";
 
 export default function CreateItem() {
   const [form, setForm] = useState({
     title: "", description: "", category: "", pricePerHour: "", location: "",
   });
-  const [image, setImage] = useState(null);
+  const [mediaFiles, setMediaFiles] = useState([]);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
-
-  function handleImageChange(e) {
-    const file = e.target.files[0] || null;
-    setFieldErrors((prev) => ({ ...prev, image: undefined }));
-    if (file && !ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setFieldErrors((prev) => ({ ...prev, image: "Image must be a JPG, PNG or WEBP file" }));
-      e.target.value = "";
-      setImage(null);
-      return;
-    }
-    if (file && file.size > MAX_IMAGE_SIZE) {
-      setFieldErrors((prev) => ({ ...prev, image: "Image must be 5 MB or smaller" }));
-      e.target.value = "";
-      setImage(null);
-      return;
-    }
-    setImage(file);
-  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -43,13 +22,14 @@ export default function CreateItem() {
 
     const data = new FormData();
     Object.entries(form).forEach(([key, value]) => data.append(key, value));
-    if (image) data.append("image", image);
+    // Sent in the order shown; the first photo becomes the cover.
+    mediaFiles.forEach((file) => data.append("media", file));
 
     try {
-      await api.post("/items", data, {
+      const res = await api.post("/items", data, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      navigate("/");
+      navigate(`/items/${res.data.id}`);
     } catch (err) {
       setError(getErrorMessage(err, "Could not create listing"));
       setFieldErrors(getFieldErrors(err));
@@ -79,10 +59,13 @@ export default function CreateItem() {
         <input className="border p-2 rounded" placeholder="Location" required minLength={2} maxLength={200}
           value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
         <FieldError message={fieldErrors.location} />
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImageChange} />
-        <FieldError message={fieldErrors.image} />
+        <div>
+          <p className="text-sm font-medium mb-1">Photos &amp; videos <span className="font-normal text-slate-500">(first photo is the cover)</span></p>
+          <MediaPicker files={mediaFiles} onChange={setMediaFiles} disabled={submitting} />
+        </div>
+        <FieldError message={fieldErrors.media} />
         <button className="bg-slate-900 text-white py-2 rounded disabled:opacity-50" disabled={submitting}>
-          {submitting ? "Listing item..." : "List item"}
+          {submitting ? (mediaFiles.length ? "Uploading media..." : "Listing item...") : "List item"}
         </button>
       </form>
     </div>

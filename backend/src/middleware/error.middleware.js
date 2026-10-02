@@ -3,12 +3,12 @@
 import multer from "multer";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../utils/AppError.js";
-import cloudinary from "../config/cloudinary.js";
 
 const MULTER_MESSAGES = {
-  LIMIT_FILE_SIZE: "Image must be 5 MB or smaller",
-  LIMIT_FILE_COUNT: "Only one image can be uploaded",
-  LIMIT_UNEXPECTED_FILE: "Unexpected file field; upload the image as \"image\"",
+  LIMIT_FILE_SIZE: "Each video must be 50 MB or smaller (images 5 MB)",
+  LIMIT_FILE_COUNT: "You can upload at most 10 media files",
+  LIMIT_UNEXPECTED_FILE: "Unexpected file field; upload files as \"media\"",
+  LIMIT_FIELD_COUNT: "Too many form fields",
 };
 
 // 404 for any /api route that doesn't exist.
@@ -25,7 +25,15 @@ function toAppError(err) {
 
   if (err instanceof multer.MulterError) {
     const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
-    return new AppError(status, MULTER_MESSAGES[err.code] || "Invalid file upload");
+    const message = MULTER_MESSAGES[err.code] || "Invalid file upload";
+    return new AppError(status, message, { media: message });
+  }
+
+  // Cloudinary rejected or failed an upload (already cleaned up by uploadAll).
+  if (err.isUploadFailure) {
+    return new AppError(502, "Could not upload your media. Please check the files and try again.", {
+      media: "Upload failed",
+    });
   }
 
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -53,13 +61,8 @@ function toAppError(err) {
 
 // Express recognises error handlers by their four arguments, so `next` stays.
 export function errorHandler(err, req, res, next) {
-  // If an image already reached Cloudinary but the request failed, remove it
-  // so failed submissions don't leave orphaned uploads behind.
-  if (req.file?.filename) {
-    cloudinary.uploader.destroy(req.file.filename).catch((cleanupErr) => {
-      console.error("Failed to delete orphaned image:", cleanupErr.message);
-    });
-  }
+  // (Uploaded media is cleaned up where it is uploaded: see utils/mediaStorage.js
+  // and the item controller. Temporary files are removed by uploadMedia.)
 
   // A response already started streaming; let Express close the connection.
   if (res.headersSent) return next(err);
