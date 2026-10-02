@@ -14,6 +14,8 @@ export default function MyBookings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const as = searchParams.get("as") === "owner" ? "owner" : "renter";
   const status = searchParams.get("status") || "";
+  // Set when arriving from a notification: that booking is scrolled to and outlined.
+  const highlightId = Number(searchParams.get("booking")) || null;
   const location = useLocation();
 
   const [bookings, setBookings] = useState([]);
@@ -23,22 +25,38 @@ export default function MyBookings() {
   const [actingId, setActingId] = useState(null);
   const [contacts, setContacts] = useState({});
 
-  async function fetchBookings() {
-    setLoading(true);
-    setError("");
+  // `silent` refreshes the list in place without the loading state.
+  async function fetchBookings({ silent = false } = {}) {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const res = await api.get("/bookings", { params: { as, ...(status ? { status } : {}) } });
       setBookings(res.data);
     } catch (err) {
-      setError(getErrorMessage(err, "Could not load bookings"));
+      if (!silent) setError(getErrorMessage(err, "Could not load bookings"));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
     fetchBookings();
+  }, [as, status, highlightId]);
+
+  // A new notification usually means one of these bookings changed.
+  useEffect(() => {
+    const onNew = () => fetchBookings({ silent: true });
+    window.addEventListener("notifications:new", onNew);
+    return () => window.removeEventListener("notifications:new", onNew);
   }, [as, status]);
+
+  useEffect(() => {
+    if (!loading && highlightId) {
+      document.getElementById(`booking-${highlightId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [loading, highlightId]);
 
   function updateParams(changes) {
     const next = { as, status, ...changes };
@@ -219,7 +237,11 @@ export default function MyBookings() {
       ) : (
         <ul className="space-y-3">
           {bookings.map((b) => (
-            <li key={b.id} className="border rounded-lg p-3 flex gap-3">
+            <li
+              key={b.id}
+              id={`booking-${b.id}`}
+              className={`border rounded-lg p-3 flex gap-3 ${b.id === highlightId ? "ring-2 ring-blue-500" : ""}`}
+            >
               <ItemImage src={b.item.imageUrl} alt={b.item.title} className="w-24 h-24 object-cover rounded" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">

@@ -27,6 +27,7 @@ model User {
   items           Item[]
   rentals         Booking[] @relation("RenterBookings")
   bookingRequests Booking[] @relation("OwnerBookings")
+  notifications   Notification[]
 }
 
 model Item {
@@ -97,8 +98,47 @@ model Booking {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
+  notifications Notification[]
+
   @@index([itemId, startTime])
   @@index([renterId, createdAt])
   @@index([ownerId, createdAt])
   @@index([status])
+}
+
+// One value per booking event that the other party should hear about.
+enum NotificationType {
+  BOOKING_REQUESTED           // -> owner: a renter sent a request
+  BOOKING_ACCEPTED            // -> renter
+  BOOKING_REJECTED            // -> renter: owner declined
+  BOOKING_AUTO_REJECTED       // -> renter: owner accepted an overlapping request
+  BOOKING_CANCELLED_BY_RENTER // -> owner
+  BOOKING_CANCELLED_BY_OWNER  // -> renter
+  BOOKING_EXPIRED             // -> renter: owner never responded
+  BOOKING_STARTED             // -> renter: item handed over
+  BOOKING_COMPLETED           // -> renter: return confirmed
+}
+
+// Persistent in-app notifications, always created server-side in the same
+// transaction as the booking change they describe.
+model Notification {
+  id          Int              @id @default(autoincrement())
+
+  recipient   User             @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  recipientId Int
+  // Nullable so future non-booking notifications fit the same table.
+  booking     Booking?         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId   Int?
+
+  type        NotificationType
+  title       String
+  message     String
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  // Each booking event happens at most once, so this blocks duplicates if a
+  // transition is ever retried.
+  @@unique([bookingId, recipientId, type])
+  @@index([recipientId, createdAt])
+  @@index([recipientId, readAt])
 }
