@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api, { getErrorMessage, getFieldErrors } from "../api/axios.js";
 import FieldError from "../components/FieldError.jsx";
 import MediaPicker from "../components/MediaPicker.jsx";
+import { useDirectUpload } from "../hooks/useDirectUpload.js";
 
 export default function CreateItem() {
   const [form, setForm] = useState({
@@ -12,6 +13,8 @@ export default function CreateItem() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [stage, setStage] = useState("");
+  const { statuses, uploadFiles, reset } = useDirectUpload();
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
@@ -20,21 +23,29 @@ export default function CreateItem() {
     setFieldErrors({});
     setSubmitting(true);
 
-    const data = new FormData();
-    Object.entries(form).forEach(([key, value]) => data.append(key, value));
-    // Sent in the order shown; the first photo becomes the cover.
-    mediaFiles.forEach((file) => data.append("media", file));
-
     try {
-      const res = await api.post("/items", data, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      // 1. Files go straight to Cloudinary (already-uploaded ones are skipped
+      //    on a retry). 2. The listing is created with the uploaded ids, in
+      //    the order shown; the first photo becomes the cover.
+      setStage("uploading");
+      const upload = await uploadFiles(mediaFiles);
+      if (!upload.ok) {
+        setError(upload.error);
+        return;
+      }
+      setStage("saving");
+      const res = await api.post("/items", { ...form, media: upload.publicIds });
       navigate(`/items/${res.data.id}`);
     } catch (err) {
       setError(getErrorMessage(err, "Could not create listing"));
-      setFieldErrors(getFieldErrors(err));
+      const errors = getFieldErrors(err);
+      setFieldErrors(errors);
+      // The server refused the uploaded files themselves (e.g. expired or
+      // rejected): upload them again on the next try.
+      if (errors.media) reset();
     } finally {
       setSubmitting(false);
+      setStage("");
     }
   }
 
@@ -61,11 +72,11 @@ export default function CreateItem() {
         <FieldError message={fieldErrors.location} />
         <div>
           <p className="text-sm font-medium mb-1">Photos &amp; videos <span className="font-normal text-slate-500">(first photo is the cover)</span></p>
-          <MediaPicker files={mediaFiles} onChange={setMediaFiles} disabled={submitting} />
+          <MediaPicker files={mediaFiles} onChange={setMediaFiles} disabled={submitting} statuses={statuses} />
         </div>
         <FieldError message={fieldErrors.media} />
         <button className="bg-slate-900 text-white py-2 rounded disabled:opacity-50" disabled={submitting}>
-          {submitting ? (mediaFiles.length ? "Uploading media..." : "Listing item...") : "List item"}
+          {stage === "uploading" ? "Uploading media..." : submitting ? "Listing item..." : "List item"}
         </button>
       </form>
     </div>

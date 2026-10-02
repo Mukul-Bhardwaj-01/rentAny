@@ -2,6 +2,7 @@ import { useState } from "react";
 import api, { getErrorMessage } from "../api/axios.js";
 import ItemImage from "./ItemImage.jsx";
 import MediaPicker from "./MediaPicker.jsx";
+import { useDirectUpload } from "../hooks/useDirectUpload.js";
 
 // Owner-only panel on the item page: remove existing photos/videos and add
 // new ones. `onChange` receives the updated { media, imageUrl }.
@@ -9,21 +10,26 @@ export default function ManageMedia({ item, onChange }) {
   const [newFiles, setNewFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const { statuses, uploadFiles, reset } = useDirectUpload();
   const media = item.media || [];
 
   async function upload() {
     setBusy(true);
     setError("");
-    const data = new FormData();
-    newFiles.forEach((f) => data.append("media", f));
     try {
-      const res = await api.post(`/items/${item.id}/media`, data, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      // Straight to Cloudinary with signatures for this listing, then attach.
+      const result = await uploadFiles(newFiles, item.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const res = await api.post(`/items/${item.id}/media`, { media: result.publicIds });
       onChange(res.data);
       setNewFiles([]);
+      reset();
     } catch (err) {
-      setError(getErrorMessage(err, "Could not upload media"));
+      setError(getErrorMessage(err, "Could not add media"));
+      if (err.response?.data?.errors?.media) reset(); // upload again next time
     } finally {
       setBusy(false);
     }
@@ -79,7 +85,7 @@ export default function ManageMedia({ item, onChange }) {
         </ul>
       )}
 
-      <MediaPicker files={newFiles} onChange={setNewFiles} existing={media} disabled={busy} />
+      <MediaPicker files={newFiles} onChange={setNewFiles} existing={media} disabled={busy} statuses={statuses} />
       {newFiles.length > 0 && (
         <button
           type="button"

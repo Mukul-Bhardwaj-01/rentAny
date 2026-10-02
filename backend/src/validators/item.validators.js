@@ -1,6 +1,39 @@
 import { checkString } from "../middleware/validate.middleware.js";
+import { ISSUED_PUBLIC_ID, MEDIA_LIMITS } from "../utils/mediaRules.js";
 
 const MAX_PRICE = 100000;
+
+// `media`: public ids of files uploaded directly to Cloudinary with
+// signatures from POST /api/media/signatures, in display order. Only the
+// format is checked here; ownership and the uploads themselves are verified
+// in utils/directUploads.js.
+function checkMediaIds(input, values, errors, { required }) {
+  const raw = input.media;
+  if (raw === undefined || raw === null) {
+    if (required) errors.media = "Choose at least one photo or video";
+    else values.media = [];
+    return;
+  }
+  if (!Array.isArray(raw) || raw.some((id) => typeof id !== "string" || !ISSUED_PUBLIC_ID.test(id))) {
+    errors.media = "media must be a list of uploaded file ids";
+  } else if (required && raw.length === 0) {
+    errors.media = "Choose at least one photo or video";
+  } else if (raw.length > MEDIA_LIMITS.maxTotal) {
+    errors.media = `A listing can have at most ${MEDIA_LIMITS.maxTotal} photos and videos`;
+  } else if (new Set(raw).size !== raw.length) {
+    errors.media = "The same file was listed twice";
+  } else {
+    values.media = raw;
+  }
+}
+
+// POST /api/items/:id/media  body: { media: [publicId, ...] }
+export function registerMediaValidator(input) {
+  const values = {};
+  const errors = {};
+  checkMediaIds(input, values, errors, { required: true });
+  return { values, errors };
+}
 
 export function createItemValidator(input) {
   const values = {};
@@ -10,6 +43,7 @@ export function createItemValidator(input) {
   checkString(input, "description", "Description", { min: 10, max: 2000 }, values, errors);
   checkString(input, "category", "Category", { min: 2, max: 50 }, values, errors);
   checkString(input, "location", "Location", { min: 2, max: 200 }, values, errors);
+  checkMediaIds(input, values, errors, { required: false });
 
   // Multipart form fields always arrive as strings.
   const rawPrice = typeof input.pricePerHour === "string" ? input.pricePerHour.trim() : input.pricePerHour;

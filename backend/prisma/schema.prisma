@@ -28,6 +28,7 @@ model User {
   rentals         Booking[] @relation("RenterBookings")
   bookingRequests Booking[] @relation("OwnerBookings")
   notifications   Notification[]
+  mediaUploads    MediaUpload[]
 }
 
 model Item {
@@ -50,6 +51,7 @@ model Item {
 
   bookings      Booking[]
   media         ItemMedia[]
+  mediaUploads  MediaUpload[]
 }
 
 enum MediaType {
@@ -66,12 +68,34 @@ model ItemMedia {
   url       String
   // Cloudinary public id, needed to delete the asset. Null only for legacy
   // images whose URL wasn't a Cloudinary upload of ours.
-  publicId  String?
+  // Unique: one Cloudinary asset can belong to only one listing.
+  publicId  String?   @unique
   sortOrder Int
   createdAt DateTime  @default(now())
 
   // Also serves as the index for loading an item's media in order.
   @@unique([itemId, sortOrder])
+}
+
+// A signed direct-to-Cloudinary upload the server has authorised but that
+// is not (yet) part of a listing. The browser uploads to exactly this public
+// id; the row is consumed when the asset is attached to an item. Rows that
+// expire unclaimed are swept: their Cloudinary asset is deleted.
+model MediaUpload {
+  id        Int       @id @default(autoincrement())
+  publicId  String    @unique
+  // Who may attach it, and to which listing (null = a listing being created).
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  item      Item?     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId    Int?
+  type      MediaType
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+  @@index([itemId])
+  @@index([expiresAt])
 }
 
 enum BookingStatus {

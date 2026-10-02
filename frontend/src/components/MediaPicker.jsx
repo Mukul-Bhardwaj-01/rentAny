@@ -1,10 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MEDIA_ACCEPT, MEDIA_LIMITS, checkMediaSelection, mediaTypeOf } from "../utils/media.js";
 
+// Progress bar / done tick / failure marker over a selected file's preview.
+function UploadStatus({ status }) {
+  if (!status) return null;
+  if (status.status === "uploading") {
+    return (
+      <span className="absolute inset-x-1 bottom-1 h-1.5 bg-black/40 rounded" role="progressbar"
+        aria-valuenow={Math.round((status.progress || 0) * 100)} aria-valuemin={0} aria-valuemax={100}>
+        <span className="block h-full bg-green-500 rounded" style={{ width: `${Math.round((status.progress || 0) * 100)}%` }} />
+      </span>
+    );
+  }
+  if (status.status === "done") {
+    return <span className="absolute top-1 left-1 bg-green-600 text-white rounded-full w-5 h-5 text-xs leading-5 text-center" aria-label="Uploaded">✓</span>;
+  }
+  if (status.status === "error") {
+    return (
+      <span className="absolute inset-0 rounded ring-2 ring-red-600 bg-red-600/30 flex items-end justify-center pb-1" title={status.error}>
+        <span className="text-[10px] bg-red-700 text-white px-1 rounded">Failed</span>
+      </span>
+    );
+  }
+  return null;
+}
+
 // Lets the user pick several photos/videos (in one go or several), preview
 // them and remove any before uploading. `existing` is the media the listing
-// already has, so limits account for it.
-export default function MediaPicker({ files, onChange, existing = [], disabled }) {
+// already has, so limits account for it. `statuses` (optional) is a Map of
+// File -> upload status from useDirectUpload.
+export default function MediaPicker({ files, onChange, existing = [], disabled, statuses }) {
   const [error, setError] = useState("");
   const inputRef = useRef(null);
 
@@ -60,6 +85,7 @@ export default function MediaPicker({ files, onChange, existing = [], disabled }
               {mediaTypeOf(f) === "VIDEO" && (
                 <span className="absolute bottom-1 left-1 text-[10px] bg-black/70 text-white px-1 rounded">VIDEO</span>
               )}
+              <UploadStatus status={statuses?.get(f)} />
               <button
                 type="button"
                 onClick={() => removeAt(i)}

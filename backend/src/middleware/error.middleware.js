@@ -4,10 +4,13 @@ import multer from "multer";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../utils/AppError.js";
 
+// Only the legacy single-"image" multipart path uses multer now; photos and
+// videos are otherwise uploaded straight to Cloudinary.
 const MULTER_MESSAGES = {
-  LIMIT_FILE_SIZE: "Each video must be 50 MB or smaller (images 5 MB)",
-  LIMIT_FILE_COUNT: "You can upload at most 10 media files",
-  LIMIT_UNEXPECTED_FILE: "Unexpected file field; upload files as \"media\"",
+  LIMIT_FILE_SIZE: "The image must be 5 MB or smaller",
+  LIMIT_FILE_COUNT: "Only one image can be sent this way",
+  LIMIT_UNEXPECTED_FILE:
+    "Only a single \"image\" file can be sent with the form. Upload photos and videos directly (POST /api/media/signatures).",
   LIMIT_FIELD_COUNT: "Too many form fields",
 };
 
@@ -26,7 +29,7 @@ function toAppError(err) {
   if (err instanceof multer.MulterError) {
     const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
     const message = MULTER_MESSAGES[err.code] || "Invalid file upload";
-    return new AppError(status, message, { media: message });
+    return new AppError(status, message, { image: message });
   }
 
   // Cloudinary rejected or failed an upload (already cleaned up by uploadAll).

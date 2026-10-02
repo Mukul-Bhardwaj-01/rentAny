@@ -9,13 +9,14 @@ import {
   deleteItemMedia,
 } from "../controllers/item.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
-import { uploadMedia } from "../middleware/upload.middleware.js";
+import { legacyImageUpload } from "../middleware/upload.middleware.js";
 import { validate } from "../middleware/validate.middleware.js";
 import {
   createItemValidator,
   itemIdValidator,
   listItemsValidator,
   itemMediaParamsValidator,
+  registerMediaValidator,
 } from "../validators/item.validators.js";
 import { getItemAvailability } from "../controllers/booking.controller.js";
 import { availabilityValidator } from "../validators/booking.validators.js";
@@ -34,17 +35,17 @@ router.get(
   asyncHandler(getItemAvailability)
 );
 
-// Files land in a temporary folder first; the text fields are validated
-// before anything is uploaded to Cloudinary (see upload.middleware.js).
-router.post("/", requireAuth, uploadMedia, validate(createItemValidator), asyncHandler(createItem));
+// JSON with uploaded media ids, or (legacy) multipart with one "image" file.
+router.post("/", requireAuth, legacyImageUpload, validate(createItemValidator), asyncHandler(createItem));
 
-// Owner-only media management. Ownership is checked before the upload is read.
+// Owner-only media management. Files are uploaded straight to Cloudinary
+// (POST /api/media/signatures with itemId); this attaches them.
 router.post(
   "/:id/media",
   requireAuth,
   validate(itemIdValidator, "params"),
   asyncHandler(requireItemOwner),
-  uploadMedia,
+  validate(registerMediaValidator),
   asyncHandler(addItemMedia)
 );
 router.delete(
