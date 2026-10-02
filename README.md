@@ -1,8 +1,4 @@
-<h1><wbr>
-
-<h1><wbr>
-
-<h1>rentANY
+# rentANY
 
 "rentAny" : a peer-to-peer rental marketplace where users can list, discover, and rent everyday items on an hourly basis, where users can search for nearby items, compare rental options, book for a specific duration, make secure payments, and manage the complete rental lifecycle from booking to return.
 
@@ -72,11 +68,17 @@ Open `.env` and fill in:
 - `JWT_SECRET` — any long random string (e.g. mash your keyboard)
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` —
   from your Cloudinary dashboard
+- `CLIENT_URL` — the frontend URL allowed to call the API (CORS). Leave it as
+  `http://localhost:5173` for local development; comma-separate multiple URLs.
 
-Then create the database tables and start the server:
+The server refuses to start and lists what's missing if any required value
+is empty.
+
+Then create the database tables (this applies every migration in
+`prisma/migrations`) and start the server:
 
 ```
-npx prisma migrate dev --name init
+npx prisma migrate dev
 npm run dev
 ```
 
@@ -93,6 +95,10 @@ cd frontend
 npm install
 npm run dev
 ```
+
+The frontend talks to `http://localhost:5000/api` by default. To point it
+elsewhere (e.g. a deployed backend), copy `frontend/.env.example` to
+`frontend/.env` and set `VITE_API_URL`.
 
 Open the URL Vite prints (usually `http://localhost:5173`).
 

@@ -18,8 +18,18 @@ export function AuthProvider({ children }) {
     api
       .get("/auth/me")
       .then((res) => setUser(res.data))
-      .catch(() => localStorage.removeItem("token"))
+      .catch((err) => {
+        // Only a rejected token ends the session; if the server is just
+        // unreachable, keep the token so the user stays logged in on retry.
+        if (err.response?.status === 401) localStorage.removeItem("token");
+      })
       .finally(() => setLoading(false));
+  }, []);
+
+  // Any authenticated request that comes back 401 logs the user out.
+  useEffect(() => {
+    window.addEventListener("auth:logout", logout);
+    return () => window.removeEventListener("auth:logout", logout);
   }, []);
 
   function login(token, userData) {

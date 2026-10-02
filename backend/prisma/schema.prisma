@@ -27,7 +27,7 @@ model Item {
   title         String
   description   String
   category      String
-  pricePerHour  Float
+  pricePerHour  Decimal  @db.Decimal(10, 2)
   imageUrl      String?
   location      String
   isAvailable   Boolean  @default(true)
