@@ -1,6 +1,9 @@
-// Prisma schema for RentAny — covers only what's needed for the mid-term
-// scope: users (auth) and items (listings with images). Booking, payments,
-// maps and the chatbot are later phases and are intentionally left out.
+// Prisma schema for RentAny: users (auth), items (listings with images) and
+// hourly bookings. Payments, deposits, reviews, maps and the chatbot are
+// later phases and are intentionally left out.
+//
+// Raw-SQL constraints Prisma can't express live in the migration files:
+// see migrations/*_bookings/migration.sql (CHECKs + the overlap exclusion).
 
 generator client {
   provider = "prisma-client-js"
@@ -19,7 +22,9 @@ model User {
   phone        String?
   createdAt    DateTime @default(now())
 
-  items        Item[]
+  items           Item[]
+  rentals         Booking[] @relation("RenterBookings")
+  bookingRequests Booking[] @relation("OwnerBookings")
 }
 
 model Item {
@@ -30,9 +35,68 @@ model Item {
   pricePerHour  Decimal  @db.Decimal(10, 2)
   imageUrl      String?
   location      String
+  // Owner's on/off switch for the listing. Whether a specific time slot is
+  // free comes from the item's ACCEPTED/ACTIVE bookings.
   isAvailable   Boolean  @default(true)
   createdAt     DateTime @default(now())
 
   owner         User     @relation(fields: [ownerId], references: [id])
   ownerId       Int
+
+  bookings      Booking[]
+}
+
+enum BookingStatus {
+  PENDING   // renter requested, waiting for the owner
+  ACCEPTED  // owner approved; the slot is reserved
+  REJECTED  // owner declined, or auto-declined because the slot was given away
+  CANCELLED // withdrawn by renter or owner before the rental started
+  EXPIRED   // owner never responded before the start time
+  ACTIVE    // owner handed the item over; rental in progress
+  COMPLETED // owner confirmed the item was returned
+}
+
+enum CancelledBy {
+  RENTER
+  OWNER
+}
+
+model Booking {
+  id           Int           @id @default(autoincrement())
+
+  item         Item          @relation(fields: [itemId], references: [id])
+  itemId       Int
+  renter       User          @relation("RenterBookings", fields: [renterId], references: [id])
+  renterId     Int
+  // Copied from item.ownerId so owner history is a single indexed query.
+  owner        User          @relation("OwnerBookings", fields: [ownerId], references: [id])
+  ownerId      Int
+
+  // Half-open interval [startTime, endTime); endTime = startTime + hours.
+  startTime    DateTime      @db.Timestamptz(3)
+  endTime      DateTime      @db.Timestamptz(3)
+  hours        Int
+
+  // Snapshots, so later price changes don't affect existing bookings.
+  pricePerHour Decimal       @db.Decimal(10, 2)
+  rentalAmount Decimal       @db.Decimal(10, 2)
+
+  status       BookingStatus @default(PENDING)
+  renterNote   String?
+  responseNote String?
+  cancelledBy  CancelledBy?
+  cancelReason String?
+
+  respondedAt  DateTime?
+  cancelledAt  DateTime?
+  startedAt    DateTime?
+  returnedAt   DateTime?
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([itemId, startTime])
+  @@index([renterId, createdAt])
+  @@index([ownerId, createdAt])
+  @@index([status])
 }

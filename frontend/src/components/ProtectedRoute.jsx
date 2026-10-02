@@ -8,7 +8,7 @@ export default function ProtectedRoute({ children }) {
   const location = useLocation();
 
   if (loading) return <p className="text-center mt-10">Loading...</p>;
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
 
   return children;
 }

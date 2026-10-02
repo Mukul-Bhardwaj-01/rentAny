@@ -30,7 +30,8 @@ export async function getItems(req, res) {
 export async function getItemById(req, res) {
   const item = await prisma.item.findUnique({
     where: { id: req.params.id },
-    include: { owner: { select: { id: true, name: true, phone: true } } },
+    // No phone here: contact details are shared only once a booking is accepted.
+    include: { owner: { select: { id: true, name: true } } },
   });
 
   if (!item) throw new AppError(404, "Item not found");

@@ -34,6 +34,16 @@ function toAppError(err) {
     if (err.code === "P2003") return new AppError(400, "Referenced record does not exist");
   }
 
+  // Postgres exclusion-constraint violation (Booking_no_overlap). Prisma has
+  // no error code for it, so the Postgres code only appears in the message.
+  if (err instanceof Prisma.PrismaClientUnknownRequestError && err.message.includes('code: "23P01"')) {
+    return new AppError(409, "This time slot is already booked. Please choose another time.");
+  }
+  // Deadlock / serialization failure: two requests collided; safe to retry.
+  if (err instanceof Prisma.PrismaClientUnknownRequestError && /code: "(40P01|40001)"/.test(err.message)) {
+    return new AppError(409, "Another change happened at the same time. Please try again.");
+  }
+
   // Other client errors from Express's own middleware (e.g. bad encoding)
   // mark themselves safe to show with `expose`.
   if (err.expose && err.status >= 400 && err.status < 500) return new AppError(err.status, err.message);

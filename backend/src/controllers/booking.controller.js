@@ -1,0 +1,318 @@
+import prisma from "../config/prisma.js";
+import { AppError } from "../utils/AppError.js";
+
+// Only these statuses reserve a time slot (mirrors the Booking_no_overlap
+// exclusion constraint in the database). PENDING requests never block.
+const BLOCKING_STATUSES = ["ACCEPTED", "ACTIVE"];
+// Phone numbers are shared only once the owner has agreed to the rental.
+const CONTACT_VISIBLE_STATUSES = ["ACCEPTED", "ACTIVE", "COMPLETED"];
+// The owner may hand the item over from this long before the start time.
+const HANDOVER_EARLY_MS = 60 * 60 * 1000;
+
+const listInclude = {
+  item: { select: { id: true, title: true, imageUrl: true, location: true } },
+  renter: { select: { id: true, name: true } },
+  owner: { select: { id: true, name: true } },
+};
+
+// Bookings use half-open intervals [start, end): back-to-back slots don't overlap.
+function overlaps(startTime, endTime) {
+  return { startTime: { lt: endTime }, endTime: { gt: startTime } };
+}
+
+// PENDING requests the owner never answered expire once their start time
+// passes. Done lazily before booking reads/actions so no cron job is needed.
+async function expireStalePendingBookings() {
+  await prisma.booking.updateMany({
+    where: { status: "PENDING", startTime: { lte: new Date() } },
+    data: { status: "EXPIRED" },
+  });
+}
+
+// Fetches a booking the caller wants to act on. Bookings the caller isn't
+// part of are reported as not found, so ids can't be probed.
+async function loadForAction(id, userId) {
+  const booking = await prisma.booking.findUnique({ where: { id } });
+  if (!booking || (booking.renterId !== userId && booking.ownerId !== userId)) {
+    throw new AppError(404, "Booking not found");
+  }
+  return booking;
+}
+
+function assertOwner(booking, userId, action) {
+  if (booking.ownerId !== userId) throw new AppError(403, `Only the item owner can ${action} this booking`);
+}
+
+function assertStatus(booking, allowed, action) {
+  if (!allowed.includes(booking.status)) {
+    throw new AppError(409, `Cannot ${action} a booking that is ${booking.status.toLowerCase()}`);
+  }
+}
+
+// Applies a status change only if the booking is still in the state we checked.
+// If a concurrent request changed it first, nothing is updated and we report 409.
+async function applyTransition(client, booking, data, extraWhere = {}) {
+  const { count } = await client.booking.updateMany({
+    where: { id: booking.id, status: booking.status, ...extraWhere },
+    data,
+  });
+  if (count === 0) throw new AppError(409, "This booking was just changed. Please refresh and try again.");
+  return client.booking.findUnique({ where: { id: booking.id }, include: listInclude });
+}
+
+async function findSlotConflict(itemId, startTime, endTime, excludeId) {
+  return prisma.booking.findFirst({
+    where: {
+      itemId,
+      status: { in: BLOCKING_STATUSES },
+      ...overlaps(startTime, endTime),
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+}
+
+// GET /api/items/:id/availability?from=&to=  (public)
+// Returns only the booked time ranges, never who booked them.
+export async function getItemAvailability(req, res) {
+  const { id } = req.params;
+  const { from, to } = req.query;
+
+  const item = await prisma.item.findUnique({ where: { id }, select: { id: true, isAvailable: true } });
+  if (!item) throw new AppError(404, "Item not found");
+
+  const booked = await prisma.booking.findMany({
+    where: { itemId: id, status: { in: BLOCKING_STATUSES }, ...overlaps(from, to) },
+    select: { startTime: true, endTime: true },
+    orderBy: { startTime: "asc" },
+  });
+
+  res.json({ itemId: item.id, isAvailable: item.isAvailable, from, to, booked });
+}
+
+// POST /api/bookings  (renter)  body: { itemId, startTime, hours, note? }
+export async function createBooking(req, res) {
+  const { itemId, startTime, hours, note } = req.body;
+  const endTime = new Date(startTime.getTime() + hours * 60 * 60 * 1000);
+
+  await expireStalePendingBookings();
+
+  const item = await prisma.item.findUnique({ where: { id: itemId } });
+  if (!item) throw new AppError(404, "Item not found");
+  if (item.ownerId === req.userId) throw new AppError(400, "You cannot book your own item");
+  if (!item.isAvailable) throw new AppError(409, "This item is not accepting bookings right now");
+
+  if (await findSlotConflict(itemId, startTime, endTime)) {
+    throw new AppError(409, "This time slot is already booked. Please choose another time.");
+  }
+
+  const duplicate = await prisma.booking.findFirst({
+    where: {
+      itemId,
+      renterId: req.userId,
+      status: { in: ["PENDING", ...BLOCKING_STATUSES] },
+      ...overlaps(startTime, endTime),
+    },
+    select: { id: true },
+  });
+  if (duplicate) {
+    throw new AppError(409, "You already have a request or booking for this item that overlaps this time");
+  }
+
+  const booking = await prisma.booking.create({
+    data: {
+      itemId,
+      renterId: req.userId,
+      ownerId: item.ownerId,
+      startTime,
+      endTime,
+      hours,
+      pricePerHour: item.pricePerHour,
+      // Decimal arithmetic, so there are no floating point rounding errors.
+      rentalAmount: item.pricePerHour.mul(hours),
+      renterNote: note,
+    },
+    include: listInclude,
+  });
+
+  res.status(201).json(booking);
+}
+
+// GET /api/bookings?as=renter|owner&status=
+export async function getMyBookings(req, res) {
+  const { as, status } = req.query;
+
+  await expireStalePendingBookings();
+
+  const bookings = await prisma.booking.findMany({
+    where: {
+      [as === "owner" ? "ownerId" : "renterId"]: req.userId,
+      ...(status ? { status } : {}),
+    },
+    include: listInclude,
+    orderBy: { createdAt: "desc" },
+  });
+
+  res.json(bookings);
+}
+
+// GET /api/bookings/:id  (renter or owner of this booking)
+export async function getBookingById(req, res) {
+  await expireStalePendingBookings();
+
+  const booking = await prisma.booking.findUnique({
+    where: { id: req.params.id },
+    include: {
+      item: { select: { id: true, title: true, imageUrl: true, location: true, category: true } },
+      renter: { select: { id: true, name: true, phone: true } },
+      owner: { select: { id: true, name: true, phone: true } },
+    },
+  });
+
+  if (!booking || (booking.renterId !== req.userId && booking.ownerId !== req.userId)) {
+    throw new AppError(404, "Booking not found");
+  }
+
+  if (!CONTACT_VISIBLE_STATUSES.includes(booking.status)) {
+    delete booking.renter.phone;
+    delete booking.owner.phone;
+  }
+
+  res.json(booking);
+}
+
+// PATCH /api/bookings/:id/accept  (owner)
+export async function acceptBooking(req, res) {
+  await expireStalePendingBookings();
+
+  const booking = await loadForAction(req.params.id, req.userId);
+  assertOwner(booking, req.userId, "accept");
+  assertStatus(booking, ["PENDING"], "accept");
+
+  if (await findSlotConflict(booking.itemId, booking.startTime, booking.endTime, booking.id)) {
+    throw new AppError(409, "This time slot is already taken by another accepted booking");
+  }
+
+  const now = new Date();
+  const updated = await prisma.$transaction(async (tx) => {
+    // Lock the item row so accepts for the same item run one at a time.
+    // Without this, two concurrent accepts deadlock: each waits on the other's
+    // accepted row (exclusion check) while auto-rejecting it. The second accept
+    // now waits, then finds its booking already auto-rejected (409).
+    await tx.$queryRaw`SELECT id FROM "Item" WHERE id = ${booking.itemId} FOR UPDATE`;
+
+    // Booking_no_overlap is still the final safety net (mapped to 409).
+    const accepted = await applyTransition(
+      tx,
+      booking,
+      { status: "ACCEPTED", respondedAt: now },
+      { startTime: { gt: now } }
+    );
+
+    // The slot is now taken, so other overlapping requests are turned down.
+    await tx.booking.updateMany({
+      where: {
+        itemId: booking.itemId,
+        status: "PENDING",
+        id: { not: booking.id },
+        ...overlaps(booking.startTime, booking.endTime),
+      },
+      data: {
+        status: "REJECTED",
+        respondedAt: now,
+        responseNote: "Another request for this time slot was accepted",
+      },
+    });
+
+    return accepted;
+  });
+
+  res.json(updated);
+}
+
+// PATCH /api/bookings/:id/reject  (owner)  body: { reason? }
+export async function rejectBooking(req, res) {
+  await expireStalePendingBookings();
+
+  const booking = await loadForAction(req.params.id, req.userId);
+  assertOwner(booking, req.userId, "reject");
+  assertStatus(booking, ["PENDING"], "reject");
+
+  const updated = await applyTransition(prisma, booking, {
+    status: "REJECTED",
+    respondedAt: new Date(),
+    responseNote: req.body.reason,
+  });
+  res.json(updated);
+}
+
+// PATCH /api/bookings/:id/cancel  body: { reason? }
+// Renter: PENDING or ACCEPTED. Owner: ACCEPTED only (owners reject PENDING
+// requests instead) and must give a reason. Only before the start time.
+export async function cancelBooking(req, res) {
+  await expireStalePendingBookings();
+
+  const booking = await loadForAction(req.params.id, req.userId);
+  const isOwner = booking.ownerId === req.userId;
+  const now = new Date();
+
+  if (isOwner) {
+    assertStatus(booking, ["ACCEPTED"], "cancel");
+    if (!req.body.reason) {
+      throw new AppError(400, "Please give the renter a reason for cancelling", {
+        reason: "A reason is required when the owner cancels",
+      });
+    }
+  } else {
+    assertStatus(booking, ["PENDING", "ACCEPTED"], "cancel");
+  }
+
+  if (booking.startTime <= now) {
+    throw new AppError(409, "This booking has already started and can no longer be cancelled");
+  }
+
+  const updated = await applyTransition(
+    prisma,
+    booking,
+    {
+      status: "CANCELLED",
+      cancelledBy: isOwner ? "OWNER" : "RENTER",
+      cancelReason: req.body.reason,
+      cancelledAt: now,
+    },
+    { startTime: { gt: now } }
+  );
+  res.json(updated);
+}
+
+// PATCH /api/bookings/:id/start  (owner confirms handover)
+export async function startBooking(req, res) {
+  const booking = await loadForAction(req.params.id, req.userId);
+  assertOwner(booking, req.userId, "start");
+  assertStatus(booking, ["ACCEPTED"], "start");
+
+  const now = new Date();
+  if (now.getTime() < booking.startTime.getTime() - HANDOVER_EARLY_MS) {
+    throw new AppError(409, "The item can be handed over at most 1 hour before the booking starts");
+  }
+  if (now >= booking.endTime) {
+    throw new AppError(409, "This booking's time has already ended, so it can't be started");
+  }
+
+  const updated = await applyTransition(prisma, booking, { status: "ACTIVE", startedAt: now });
+  res.json(updated);
+}
+
+// PATCH /api/bookings/:id/complete  (owner confirms return)
+export async function completeBooking(req, res) {
+  const booking = await loadForAction(req.params.id, req.userId);
+  assertOwner(booking, req.userId, "complete");
+  assertStatus(booking, ["ACTIVE"], "complete");
+
+  const now = new Date();
+  const updated = await applyTransition(prisma, booking, { status: "COMPLETED", returnedAt: now });
+
+  // Reported now; the security deposit phase will use it to withhold late fees.
+  const lateByMinutes = Math.max(0, Math.ceil((now - booking.endTime) / 60000));
+  res.json({ ...updated, lateByMinutes });
+}
