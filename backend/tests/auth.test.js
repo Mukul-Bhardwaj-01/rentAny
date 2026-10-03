@@ -2,7 +2,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import bcrypt from "bcryptjs";
-import { startServer, createContext, prisma, slot, requestBooking } from "./helpers.js";
+import { startServer, createContext, prisma, slot, requestBooking, payForBooking } from "./helpers.js";
 
 let api, close, ctx;
 let n = 0;
@@ -105,6 +105,7 @@ test("existing users without a phone keep working", async () => {
   const b = await requestBooking(api, renter, item.id, slot(48), 2);
   assert.equal(b.status, 201);
   assert.equal((await api("PATCH", `/bookings/${b.data.id}/accept`, { token: legacy.token })).status, 200);
+  await payForBooking(api, renter, b.data.id); // contacts are shared once paid
   const detail = await api("GET", `/bookings/${b.data.id}`, { token: renter.token });
   assert.equal(detail.data.owner.phone, null);
   assert.equal(detail.data.renter.phone, "9876500000");

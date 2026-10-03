@@ -7,6 +7,7 @@ import {
   requireItemOwner,
   addItemMedia,
   deleteItemMedia,
+  updateSecurityDeposit,
 } from "../controllers/item.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { legacyImageUpload } from "../middleware/upload.middleware.js";
@@ -17,6 +18,7 @@ import {
   listItemsValidator,
   itemMediaParamsValidator,
   registerMediaValidator,
+  securityDepositValidator,
 } from "../validators/item.validators.js";
 import { getItemAvailability } from "../controllers/booking.controller.js";
 import { availabilityValidator } from "../validators/booking.validators.js";
@@ -54,6 +56,17 @@ router.delete(
   validate(itemMediaParamsValidator, "params"),
   asyncHandler(requireItemOwner),
   asyncHandler(deleteItemMedia)
+);
+
+
+// Owner sets the refundable deposit for future bookings (0 to 50,000).
+router.patch(
+  "/:id/security-deposit",
+  requireAuth,
+  validate(itemIdValidator, "params"),
+  asyncHandler(requireItemOwner),
+  validate(securityDepositValidator),
+  asyncHandler(updateSecurityDeposit)
 );
 
 export default router;

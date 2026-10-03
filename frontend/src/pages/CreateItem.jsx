@@ -7,7 +7,7 @@ import { useDirectUpload } from "../hooks/useDirectUpload.js";
 
 export default function CreateItem() {
   const [form, setForm] = useState({
-    title: "", description: "", category: "", pricePerHour: "", location: "",
+    title: "", description: "", category: "", pricePerHour: "", location: "", securityDeposit: "0",
   });
   const [mediaFiles, setMediaFiles] = useState([]);
   const [error, setError] = useState("");
@@ -70,6 +70,15 @@ export default function CreateItem() {
         <input className="border p-2 rounded" placeholder="Location" required minLength={2} maxLength={200}
           value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
         <FieldError message={fieldErrors.location} />
+        <label className="text-sm font-medium">
+          Refundable security deposit (₹)
+          <input className="border p-2 rounded w-full mt-1 font-normal" type="number" min="0" max="50000" step="0.01" required
+            value={form.securityDeposit} onChange={(e) => setForm({ ...form, securityDeposit: e.target.value })} />
+          <span className="block text-xs font-normal text-slate-500 mt-1">
+            ₹0 to ₹50,000. Charged with the rental and refunded after return, minus any approved claims.
+          </span>
+        </label>
+        <FieldError message={fieldErrors.securityDeposit} />
         <div>
           <p className="text-sm font-medium mb-1">Photos &amp; videos <span className="font-normal text-slate-500">(first photo is the cover)</span></p>
           <MediaPicker files={mediaFiles} onChange={setMediaFiles} disabled={submitting} statuses={statuses} />

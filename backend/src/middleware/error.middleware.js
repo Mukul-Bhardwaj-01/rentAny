@@ -3,6 +3,7 @@
 import multer from "multer";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../utils/AppError.js";
+import { RazorpayError } from "../utils/razorpay.js";
 
 // Only the legacy single-"image" multipart path uses multer now; photos and
 // videos are otherwise uploaded straight to Cloudinary.
@@ -30,6 +31,12 @@ function toAppError(err) {
     const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
     const message = MULTER_MESSAGES[err.code] || "Invalid file upload";
     return new AppError(status, message, { image: message });
+  }
+
+  // Razorpay was unreachable or rejected a request we made.
+  if (err instanceof RazorpayError) {
+    console.error("Razorpay error:", err.status, err.code, err.message);
+    return new AppError(502, "The payment provider couldn't complete the request. Please try again in a moment.");
   }
 
   // Cloudinary rejected or failed an upload (already cleaned up by uploadAll).

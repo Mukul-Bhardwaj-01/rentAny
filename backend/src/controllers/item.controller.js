@@ -38,7 +38,7 @@ export async function getItemById(req, res) {
   const item = await prisma.item.findUnique({
     where: { id: req.params.id },
     include: {
-      // No phone here: contact details are shared only once a booking is accepted.
+      // No phone here: contact details are shared only once a booking is paid.
       owner: { select: { id: true, name: true } },
       media: { select: mediaSelect, orderBy: mediaOrder },
     },
@@ -71,13 +71,14 @@ const itemWithMedia = (client, id) =>
   client.item.findUnique({ where: { id }, include: { media: { select: mediaSelect, orderBy: mediaOrder } } });
 
 async function insertItem(tx, req, media) {
-  const { title, description, category, pricePerHour, location } = req.body;
+  const { title, description, category, pricePerHour, location, securityDeposit } = req.body;
   const created = await tx.item.create({
     data: {
       title,
       description,
       category,
       pricePerHour,
+      securityDeposit,
       location,
       imageUrl: media.find((m) => m.type === "IMAGE")?.url ?? null,
       ownerId: req.userId,
@@ -128,12 +129,23 @@ export async function createItem(req, res) {
   }
 }
 
-// Middleware for media routes: the item must exist and belong to the caller.
+// Middleware for owner-only item routes: the item must exist and belong to the caller.
 export async function requireItemOwner(req, res, next) {
   const item = await prisma.item.findUnique({ where: { id: req.params.id }, select: { id: true, ownerId: true } });
   if (!item) throw new AppError(404, "Item not found");
-  if (item.ownerId !== req.userId) throw new AppError(403, "Only the owner can change this listing's media");
+  if (item.ownerId !== req.userId) throw new AppError(403, "Only the owner can change this listing");
   next();
+}
+
+// PATCH /api/items/:id/security-deposit  (owner)  body: { securityDeposit }
+// Existing bookings keep the deposit they were requested with.
+export async function updateSecurityDeposit(req, res) {
+  const item = await prisma.item.update({
+    where: { id: req.params.id },
+    data: { securityDeposit: req.body.securityDeposit },
+    select: { id: true, securityDeposit: true },
+  });
+  res.json(item);
 }
 
 const mediaResponse = (client, itemId) =>

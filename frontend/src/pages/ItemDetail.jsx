@@ -13,6 +13,8 @@ const MIN_HOURS = 1;
 const MAX_HOURS = 72;
 const MIN_LEAD_MS = 30 * 60 * 1000;
 const MAX_ADVANCE_MS = 30 * 24 * 60 * 60 * 1000;
+// Fixed platform fee, for display only (the server decides what is charged).
+const PLATFORM_FEE_PAISE = 4900;
 
 // First full hour that is at least 30 minutes from now.
 function defaultStart() {
@@ -111,10 +113,16 @@ export default function ItemDetail() {
         <h1 className="text-2xl font-bold mt-4">{item.title}</h1>
         <p className="text-slate-500">{item.category} · {item.location}</p>
         <p className="mt-2 text-xl font-bold">₹{formatPrice(item.pricePerHour)}/hr</p>
+        {Number(item.securityDeposit) > 0 && (
+          <p className="text-sm text-slate-600">Refundable security deposit: ₹{formatPrice(item.securityDeposit)}</p>
+        )}
         <p className="mt-4 whitespace-pre-line">{item.description}</p>
         <p className="mt-4 text-sm text-slate-500">Listed by {item.owner?.name}</p>
         {isOwner && (
-          <ManageMedia item={item} onChange={(updated) => setItem({ ...item, ...updated })} />
+          <>
+            <DepositEditor item={item} onSaved={(securityDeposit) => setItem({ ...item, securityDeposit })} />
+            <ManageMedia item={item} onChange={(updated) => setItem({ ...item, ...updated })} />
+          </>
         )}
       </div>
 
@@ -174,17 +182,7 @@ export default function ItemDetail() {
                 />
                 <FieldError message={fieldErrors.note} />
 
-                {end && (
-                  <div className="bg-slate-50 rounded p-3 text-sm">
-                    <p>Until {formatDateTime(end)}</p>
-                    <p className="font-semibold mt-1">
-                      Total: ₹{formatPrice(Number(item.pricePerHour) * hours)}{" "}
-                      <span className="font-normal text-slate-500">
-                        (₹{formatPrice(item.pricePerHour)} × {hours} hr)
-                      </span>
-                    </p>
-                  </div>
-                )}
+                {end && <PriceBreakdown item={item} hours={hours} end={end} />}
                 {clash && <p className="text-sm text-red-600">This time overlaps an existing booking.</p>}
 
                 <button
@@ -214,5 +212,75 @@ export default function ItemDetail() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Shown before requesting: exactly what will be charged once the owner
+// accepts (the server snapshots the same numbers on the booking).
+// Worked out in paise so there are no floating point surprises.
+function PriceBreakdown({ item, hours, end }) {
+  const paise = (rupees) => Math.round(Number(rupees) * 100);
+  const rental = paise(item.pricePerHour) * hours;
+  const deposit = paise(item.securityDeposit || 0);
+  const total = rental + PLATFORM_FEE_PAISE + deposit;
+  const rs = (p) => `₹${formatPrice(p / 100)}`;
+  return (
+    <div className="bg-slate-50 rounded p-3 text-sm space-y-0.5">
+      <p>Until {formatDateTime(end)}</p>
+      <p className="flex justify-between"><span>Rental (₹{formatPrice(item.pricePerHour)} × {hours} hr)</span><span>{rs(rental)}</span></p>
+      <p className="flex justify-between"><span>Platform fee</span><span>{rs(PLATFORM_FEE_PAISE)}</span></p>
+      {deposit > 0 && (
+        <p className="flex justify-between"><span>Security deposit (refundable)</span><span>{rs(deposit)}</span></p>
+      )}
+      <p className="flex justify-between font-semibold border-t pt-1"><span>Total</span><span>{rs(total)}</span></p>
+      <p className="text-xs text-slate-500 pt-1">
+        You pay online after the owner accepts.{deposit > 0 ? " The deposit is refunded after the item is returned, minus any approved deductions." : ""}
+      </p>
+    </div>
+  );
+}
+
+// Owner: set the refundable deposit for future bookings (₹0 – ₹50,000).
+function DepositEditor({ item, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(Number(item.securityDeposit || 0)));
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const res = await api.patch(`/items/${item.id}/security-deposit`, { securityDeposit: value });
+      onSaved(res.data.securityDeposit);
+      setEditing(false);
+    } catch (err) {
+      setError(getFieldErrors(err).securityDeposit || getErrorMessage(err, "Could not save the deposit"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <p className="mt-4 text-sm">
+        Security deposit: ₹{formatPrice(item.securityDeposit || 0)}{" "}
+        <button onClick={() => setEditing(true)} className="text-blue-600">Change</button>
+      </p>
+    );
+  }
+  return (
+    <form onSubmit={save} className="mt-4 text-sm flex flex-wrap items-center gap-2">
+      <label>
+        Security deposit (₹)
+        <input type="number" min="0" max="50000" step="0.01" required value={value}
+          onChange={(e) => setValue(e.target.value)} className="border p-1 rounded w-32 ml-2" />
+      </label>
+      <button disabled={saving} className="bg-slate-900 text-white px-3 py-1 rounded disabled:opacity-50">Save</button>
+      <button type="button" onClick={() => setEditing(false)} className="border px-3 py-1 rounded">Cancel</button>
+      <p className="w-full text-xs text-slate-500">Applies to new booking requests only.</p>
+      {error && <p className="w-full text-xs text-red-600">{error}</p>}
+    </form>
   );
 }

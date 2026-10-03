@@ -1,7 +1,7 @@
 // Booking lifecycle, validation, access control and overlap prevention.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { startServer, createContext, prisma, slot, requestBooking, shiftBooking, HOUR } from "./helpers.js";
+import { startServer, createContext, prisma, slot, requestBooking, shiftBooking, payForBooking, HOUR } from "./helpers.js";
 
 let api, close, ctx;
 let O, R1, R2, item, paused;
@@ -135,6 +135,10 @@ test("accept: permissions, auto-reject overlapping, contact shared", async () =>
   assert.equal((await patch(O, b1.id, "accept")).status, 409, "accept twice");
   assert.equal((await patch(O, b2.id, "accept")).status, 409, "accept auto-rejected");
 
+  // Contacts are shared only once the renter has paid.
+  r = await api("GET", `/bookings/${b1.id}`, { token: R1.token });
+  assert.equal(r.data.owner.phone, undefined, "hidden while awaiting payment");
+  assert.equal((await payForBooking(api, R1, b1.id)).verify.data.bookingStatus, "CONFIRMED");
   r = await api("GET", `/bookings/${b1.id}`, { token: R1.token });
   assert.equal(r.data.owner.phone, "9876500000");
   assert.equal(r.data.renter.phone, "9876500000");
@@ -179,6 +183,8 @@ test("reject and cancel rules", async () => {
   r = await patch(O, b1.id, "cancel", { reason: "Projector broke" });
   assert.equal(r.data.status, "CANCELLED");
   assert.equal(r.data.cancelledBy, "OWNER");
+  const refund = await prisma.refund.findFirst({ where: { bookingId: b1.id } });
+  assert.equal(refund.amount.toFixed(2), "500.50", "owner cancel after payment: rental 451.50 + fee 49 (no deposit on this item)");
 
   r = await api("GET", `/items/${item.id}/availability`);
   assert.ok(!r.data.booked.some((s) => s.startTime === b1.startTime), "slot freed");
@@ -198,6 +204,10 @@ test("reject and cancel rules", async () => {
 
 test("handover and return", async () => {
   let r = await patch(O, b5.id, "start");
+  assert.equal(r.status, 409);
+  assert.match(r.data.message, /hasn't paid/, "unpaid bookings can't be handed over");
+  await payForBooking(api, R2, b5.id);
+  r = await patch(O, b5.id, "start");
   assert.equal(r.status, 409);
   assert.match(r.data.message, /1 hour/);
 
@@ -226,6 +236,7 @@ test("late return, cancel after start, start after end", async () => {
 
   const b8 = (await book(R1, item.id, slot(24 * 6), 2)).data;
   await patch(O, b8.id, "accept");
+  await payForBooking(api, R1, b8.id);
   await shiftBooking(b8.id, -30 * 60e3);
   r = await patch(R1, b8.id, "cancel");
   assert.equal(r.status, 409);
@@ -258,7 +269,7 @@ test("concurrent accepts of overlapping requests: exactly one wins, loser gets 4
   const [{ n }] = await prisma.$queryRawUnsafe(`
     SELECT count(*)::int AS n FROM "Booking" a JOIN "Booking" b
       ON a."itemId" = b."itemId" AND a.id < b.id
-     AND a.status IN ('ACCEPTED','ACTIVE') AND b.status IN ('ACCEPTED','ACTIVE')
+     AND a.status IN ('ACCEPTED','CONFIRMED','ACTIVE') AND b.status IN ('ACCEPTED','CONFIRMED','ACTIVE')
      AND tstzrange(a."startTime", a."endTime", '[)') && tstzrange(b."startTime", b."endTime", '[)')`);
   assert.equal(n, 0, "no overlapping ACCEPTED/ACTIVE bookings in the database");
 });
@@ -269,6 +280,7 @@ test("database constraints hold even when the API is bypassed", async () => {
   const sneaky = await prisma.booking.create({
     data: {
       itemId: item.id, renterId: R1.id, ownerId: O.id, hours: 2, pricePerHour: "1", rentalAmount: "2",
+      platformFee: "0", securityDeposit: "0", totalPayable: "2", policyCode: "LEGACY",
       startTime: new Date(victim.startTime), endTime: new Date(victim.endTime),
     },
   });
@@ -281,6 +293,7 @@ test("database constraints hold even when the API is bypassed", async () => {
     prisma.booking.create({
       data: {
         itemId: item.id, renterId: R1.id, ownerId: O.id, hours: 0, pricePerHour: "1", rentalAmount: "0",
+        platformFee: "0", securityDeposit: "0", totalPayable: "0", policyCode: "LEGACY",
         startTime: new Date(), endTime: new Date(),
       },
     }),

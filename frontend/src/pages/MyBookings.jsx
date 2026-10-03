@@ -3,12 +3,16 @@ import { Link, useLocation, useSearchParams } from "react-router-dom";
 import api, { getErrorMessage } from "../api/axios.js";
 import ItemImage from "../components/ItemImage.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import PaymentPanel from "../components/PaymentPanel.jsx";
 import { formatPrice, formatDateTime } from "../utils/format.js";
 
-const STATUSES = ["PENDING", "ACCEPTED", "ACTIVE", "COMPLETED", "REJECTED", "CANCELLED", "EXPIRED"];
+const STATUSES = ["PENDING", "ACCEPTED", "CONFIRMED", "ACTIVE", "COMPLETED", "REJECTED", "CANCELLED", "EXPIRED"];
 // Must match HANDOVER_EARLY_MS in booking.controller.js.
 const HANDOVER_EARLY_MS = 60 * 60 * 1000;
-const CONTACT_VISIBLE = ["ACCEPTED", "ACTIVE", "COMPLETED"];
+// Phone numbers are shared once the booking is paid.
+const CONTACT_VISIBLE = ["CONFIRMED", "ACTIVE", "COMPLETED"];
+// Bookings with something to show in the payment & deposit panel.
+const HAS_PAYMENT_INFO = ["ACCEPTED", "CONFIRMED", "ACTIVE", "COMPLETED", "CANCELLED", "EXPIRED"];
 
 export default function MyBookings() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -24,6 +28,8 @@ export default function MyBookings() {
   const [notice, setNotice] = useState(location.state?.message || "");
   const [actingId, setActingId] = useState(null);
   const [contacts, setContacts] = useState({});
+  // Booking id -> "open" | "pay" (open and start paying right away).
+  const [panels, setPanels] = useState({});
 
   // `silent` refreshes the list in place without the loading state.
   async function fetchBookings({ silent = false } = {}) {
@@ -45,6 +51,11 @@ export default function MyBookings() {
     fetchBookings();
   }, [as, status, highlightId]);
 
+  // Arriving from a notification about a booking opens its payment details.
+  useEffect(() => {
+    if (highlightId) setPanels((p) => ({ ...p, [highlightId]: p[highlightId] || "open" }));
+  }, [highlightId]);
+
   // A new notification usually means one of these bookings changed.
   useEffect(() => {
     const onNew = () => fetchBookings({ silent: true });
@@ -64,6 +75,8 @@ export default function MyBookings() {
     setSearchParams(next);
     setNotice("");
   }
+
+  const togglePanel = (id, mode = "open") => setPanels((p) => ({ ...p, [id]: p[id] && mode === "open" ? undefined : mode }));
 
   // Runs a status change (accept/reject/cancel/start/complete) and reloads the list.
   async function act(booking, action, body, successMessage) {
@@ -90,9 +103,22 @@ export default function MyBookings() {
     act(booking, "reject", { reason }, "Request rejected.");
   }
 
-  function handleCancel(booking) {
+  // Shows exactly what the cancellation would refund before confirming.
+  async function handleCancel(booking) {
+    let refundText = "";
+    try {
+      const p = (await api.get(`/bookings/${booking.id}/cancellation-preview`)).data;
+      if (p.paid) {
+        const r = p.refund;
+        refundText =
+          `\n\nRefund: ₹${formatPrice(r.total)} (rental ₹${formatPrice(r.rental)}, platform fee ₹${formatPrice(r.platformFee)}, ` +
+          `deposit ₹${formatPrice(r.deposit)}).\n${p.explanation}`;
+      }
+    } catch {
+      // The cancellation itself is still checked by the server.
+    }
     if (as === "owner") {
-      const reason = window.prompt("Tell the renter why you are cancelling (required):");
+      const reason = window.prompt(`Tell the renter why you are cancelling (required):${refundText}`);
       if (reason === null) return;
       if (!reason.trim()) {
         setError("A reason is required when the owner cancels.");
@@ -100,7 +126,7 @@ export default function MyBookings() {
       }
       act(booking, "cancel", { reason }, "Booking cancelled.");
     } else {
-      if (!window.confirm("Cancel this booking?")) return;
+      if (!window.confirm(`Cancel this booking?${refundText}`)) return;
       act(booking, "cancel", {}, "Booking cancelled.");
     }
   }
@@ -126,7 +152,7 @@ export default function MyBookings() {
     if (as === "owner" && b.status === "PENDING") {
       actions.push(
         <button key="accept" disabled={busy} className={`${btn} bg-green-700 text-white`}
-          onClick={() => act(b, "accept", {}, "Request accepted. Overlapping requests were declined.")}>
+          onClick={() => act(b, "accept", {}, "Request accepted. The renter has 12 hours to pay.")}>
           Accept
         </button>,
         <button key="reject" disabled={busy} className={`${btn} bg-red-700 text-white`}
@@ -136,7 +162,22 @@ export default function MyBookings() {
       );
     }
 
-    if (as === "owner" && b.status === "ACCEPTED") {
+    if (b.status === "ACCEPTED" && b.paymentDueAt) {
+      if (as === "renter") {
+        actions.push(
+          <button key="pay" disabled={busy} className={`${btn} bg-slate-900 text-white`} onClick={() => setPanels((p) => ({ ...p, [b.id]: "pay" }))}>
+            Pay ₹{formatPrice(b.totalPayable)}
+          </button>,
+          <span key="due" className="text-xs text-slate-500">by {formatDateTime(b.paymentDueAt)}</span>
+        );
+      } else {
+        actions.push(
+          <span key="awaiting" className="text-xs text-slate-500">Awaiting payment until {formatDateTime(b.paymentDueAt)}</span>
+        );
+      }
+    }
+
+    if (as === "owner" && b.status === "CONFIRMED") {
       if (now >= start - HANDOVER_EARLY_MS && now < end) {
         actions.push(
           <button key="start" disabled={busy} className={`${btn} bg-slate-900 text-white`}
@@ -158,7 +199,7 @@ export default function MyBookings() {
     if (as === "owner" && b.status === "ACTIVE") {
       actions.push(
         <button key="complete" disabled={busy} className={`${btn} bg-slate-900 text-white`}
-          onClick={() => act(b, "complete", {}, "Marked as returned.")}>
+          onClick={() => act(b, "complete", {}, "Marked as returned. The deposit is held for 48 hours for any claims.")}>
           Mark returned
         </button>
       );
@@ -167,7 +208,7 @@ export default function MyBookings() {
 
     const canCancel =
       now < start &&
-      (as === "owner" ? b.status === "ACCEPTED" : ["PENDING", "ACCEPTED"].includes(b.status));
+      (as === "owner" ? ["ACCEPTED", "CONFIRMED"].includes(b.status) : ["PENDING", "ACCEPTED", "CONFIRMED"].includes(b.status));
     if (canCancel) {
       actions.push(
         <button key="cancel" disabled={busy} className={`${btn} border`} onClick={() => handleCancel(b)}>
@@ -185,6 +226,14 @@ export default function MyBookings() {
             Show contact
           </button>
         )
+      );
+    }
+
+    if (HAS_PAYMENT_INFO.includes(b.status)) {
+      actions.push(
+        <button key="payment" className="text-sm text-blue-600" onClick={() => togglePanel(b.id)}>
+          {panels[b.id] ? "Hide payment & deposit" : "Payment & deposit"}
+        </button>
       );
     }
 
@@ -254,9 +303,16 @@ export default function MyBookings() {
                   {formatDateTime(b.startTime)} – {formatDateTime(b.endTime)} · {b.hours} hr
                 </p>
                 <p className="text-sm">
-                  ₹{formatPrice(b.rentalAmount)}{" "}
+                  {as === "renter" ? (
+                    <>₹{formatPrice(b.totalPayable)} <span className="text-slate-500">total</span></>
+                  ) : (
+                    <>₹{formatPrice(b.rentalAmount)} <span className="text-slate-500">rental</span></>
+                  )}
+                  {Number(b.securityDeposit) > 0 && (
+                    <span className="text-slate-500"> · incl. ₹{formatPrice(b.securityDeposit)} refundable deposit</span>
+                  )}
                   <span className="text-slate-500">
-                    · {as === "owner" ? `Renter: ${b.renter.name}` : `Owner: ${b.owner.name}`}
+                    {" "}· {as === "owner" ? `Renter: ${b.renter.name}` : `Owner: ${b.owner.name}`}
                   </span>
                 </p>
                 {b.renterNote && <p className="text-sm text-slate-500">Note: {b.renterNote}</p>}
@@ -267,6 +323,14 @@ export default function MyBookings() {
                   </p>
                 )}
                 <div className="flex flex-wrap items-center gap-2 mt-2">{renderActions(b)}</div>
+                {panels[b.id] && (
+                  <PaymentPanel
+                    key={`${b.id}-${panels[b.id]}`}
+                    bookingId={b.id}
+                    autoPay={panels[b.id] === "pay"}
+                    onChanged={() => fetchBookings({ silent: true })}
+                  />
+                )}
               </div>
             </li>
           ))}

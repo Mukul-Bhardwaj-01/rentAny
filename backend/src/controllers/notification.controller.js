@@ -1,6 +1,6 @@
 import prisma from "../config/prisma.js";
 import { AppError } from "../utils/AppError.js";
-import { expireStalePendingBookings } from "./booking.controller.js";
+import { expireOverdueBookings } from "./booking.controller.js";
 
 // Every query is scoped to req.userId, so users only ever see or change
 // their own notifications. There is deliberately no endpoint to create one:
@@ -21,25 +21,31 @@ const unreadCount = (userId) => prisma.notification.count({ where: { recipientId
 // GET /api/notifications?limit=20  -> { notifications, unreadCount }, newest first
 export async function getNotifications(req, res) {
   // Polling doubles as the trigger for lazy expiry, so renters hear about
-  // expired requests even if nobody opens the bookings page.
-  await expireStalePendingBookings();
+  // expired requests (and unpaid bookings) even if nobody opens the bookings page.
+  await expireOverdueBookings();
 
-  const [notifications, count] = await Promise.all([
+  const [rows, count] = await Promise.all([
     prisma.notification.findMany({
       where: { recipientId: req.userId },
-      select: publicFields,
+      select: { ...publicFields, booking: { select: { ownerId: true } } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: req.query.limit,
     }),
     unreadCount(req.userId),
   ]);
 
+  // bookingRole tells the client which side of the booking the reader is on
+  // (for linking to the right tab); no other booking data is exposed.
+  const notifications = rows.map(({ booking, ...n }) => ({
+    ...n,
+    bookingRole: booking ? (booking.ownerId === req.userId ? "owner" : "renter") : null,
+  }));
   res.json({ notifications, unreadCount: count });
 }
 
 // GET /api/notifications/unread-count  -> { unreadCount }
 export async function getUnreadCount(req, res) {
-  await expireStalePendingBookings();
+  await expireOverdueBookings();
   res.json({ unreadCount: await unreadCount(req.userId) });
 }
 

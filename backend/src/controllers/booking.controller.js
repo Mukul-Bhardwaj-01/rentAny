@@ -1,12 +1,24 @@
 import prisma from "../config/prisma.js";
 import { AppError } from "../utils/AppError.js";
 import { notifyBooking, notifyBookings } from "../utils/notifications.js";
+import { PLATFORM_FEE, fmt } from "../utils/money.js";
+import { CURRENT_POLICY, computeCancellationRefund } from "../utils/cancellationPolicy.js";
+import { CLAIM_WINDOW_MS } from "../utils/deposits.js";
+import {
+  paymentDeadline,
+  expireUnpaidBookings,
+  lockBooking,
+  createRefundRecord,
+  sendRefund,
+  logEvent,
+} from "../utils/payments.js";
 
 // Only these statuses reserve a time slot (mirrors the Booking_no_overlap
-// exclusion constraint in the database). PENDING requests never block.
-const BLOCKING_STATUSES = ["ACCEPTED", "ACTIVE"];
-// Phone numbers are shared only once the owner has agreed to the rental.
-const CONTACT_VISIBLE_STATUSES = ["ACCEPTED", "ACTIVE", "COMPLETED"];
+// exclusion constraint in the database). PENDING requests never block; an
+// ACCEPTED booking holds its slot while waiting for payment.
+const BLOCKING_STATUSES = ["ACCEPTED", "CONFIRMED", "ACTIVE"];
+// Phone numbers are shared only once the booking is paid (CONFIRMED).
+const CONTACT_VISIBLE_STATUSES = ["CONFIRMED", "ACTIVE", "COMPLETED"];
 // The owner may hand the item over from this long before the start time.
 const HANDOVER_EARLY_MS = 60 * 60 * 1000;
 
@@ -48,6 +60,13 @@ export async function expireStalePendingBookings() {
     const expired = await closePendingBookings(tx, stale, { status: "EXPIRED" });
     await notifyBookings(tx, expired, "BOOKING_EXPIRED");
   });
+}
+
+// Everything time-based that happens lazily on reads: unanswered requests
+// and unpaid accepted bookings expire. (The cron sweep does the same.)
+export async function expireOverdueBookings() {
+  await expireStalePendingBookings();
+  await expireUnpaidBookings();
 }
 
 // Fetches a booking the caller wants to act on. Bookings the caller isn't
@@ -116,7 +135,7 @@ export async function createBooking(req, res) {
   const { itemId, startTime, hours, note } = req.body;
   const endTime = new Date(startTime.getTime() + hours * 60 * 60 * 1000);
 
-  await expireStalePendingBookings();
+  await expireOverdueBookings();
 
   const item = await prisma.item.findUnique({ where: { id: itemId } });
   if (!item) throw new AppError(404, "Item not found");
@@ -140,6 +159,13 @@ export async function createBooking(req, res) {
     throw new AppError(409, "You already have a request or booking for this item that overlaps this time");
   }
 
+  // Financial snapshot: what the renter sees now is exactly what they pay,
+  // whatever later happens to the item's price, deposit or the platform fee.
+  // Decimal arithmetic, so there are no floating point rounding errors.
+  const rentalAmount = item.pricePerHour.mul(hours);
+  const securityDeposit = item.securityDeposit;
+  const totalPayable = rentalAmount.add(PLATFORM_FEE).add(securityDeposit);
+
   const booking = await prisma.$transaction(async (tx) => {
     const created = await tx.booking.create({
       data: {
@@ -150,8 +176,11 @@ export async function createBooking(req, res) {
         endTime,
         hours,
         pricePerHour: item.pricePerHour,
-        // Decimal arithmetic, so there are no floating point rounding errors.
-        rentalAmount: item.pricePerHour.mul(hours),
+        rentalAmount,
+        platformFee: PLATFORM_FEE,
+        securityDeposit,
+        totalPayable,
+        policyCode: CURRENT_POLICY,
         renterNote: note,
       },
       include: listInclude,
@@ -167,7 +196,7 @@ export async function createBooking(req, res) {
 export async function getMyBookings(req, res) {
   const { as, status } = req.query;
 
-  await expireStalePendingBookings();
+  await expireOverdueBookings();
 
   const bookings = await prisma.booking.findMany({
     where: {
@@ -183,7 +212,7 @@ export async function getMyBookings(req, res) {
 
 // GET /api/bookings/:id  (renter or owner of this booking)
 export async function getBookingById(req, res) {
-  await expireStalePendingBookings();
+  await expireOverdueBookings();
 
   const booking = await prisma.booking.findUnique({
     where: { id: req.params.id },
@@ -208,7 +237,7 @@ export async function getBookingById(req, res) {
 
 // PATCH /api/bookings/:id/accept  (owner)
 export async function acceptBooking(req, res) {
-  await expireStalePendingBookings();
+  await expireOverdueBookings();
 
   const booking = await loadForAction(req.params.id, req.userId);
   assertOwner(booking, req.userId, "accept");
@@ -227,10 +256,11 @@ export async function acceptBooking(req, res) {
     await tx.$queryRaw`SELECT id FROM "Item" WHERE id = ${booking.itemId} FOR UPDATE`;
 
     // Booking_no_overlap is still the final safety net (mapped to 409).
+    // The renter now has 12 hours (never past the start) to pay.
     const accepted = await applyTransition(
       tx,
       booking,
-      { status: "ACCEPTED", respondedAt: now },
+      { status: "ACCEPTED", respondedAt: now, paymentDueAt: paymentDeadline(now, booking.startTime) },
       { startTime: { gt: now } }
     );
 
@@ -262,7 +292,7 @@ export async function acceptBooking(req, res) {
 
 // PATCH /api/bookings/:id/reject  (owner)  body: { reason? }
 export async function rejectBooking(req, res) {
-  await expireStalePendingBookings();
+  await expireOverdueBookings();
 
   const booking = await loadForAction(req.params.id, req.userId);
   assertOwner(booking, req.userId, "reject");
@@ -281,46 +311,72 @@ export async function rejectBooking(req, res) {
 }
 
 // PATCH /api/bookings/:id/cancel  body: { reason? }
-// Renter: PENDING or ACCEPTED. Owner: ACCEPTED only (owners reject PENDING
-// requests instead) and must give a reason. Only before the start time.
+// Renter: PENDING, ACCEPTED or CONFIRMED. Owner: ACCEPTED or CONFIRMED (owners
+// reject PENDING requests instead) and must give a reason. Only before the
+// start time. A paid booking is refunded per its cancellation policy.
 export async function cancelBooking(req, res) {
-  await expireStalePendingBookings();
+  await expireOverdueBookings();
 
   const booking = await loadForAction(req.params.id, req.userId);
   const isOwner = booking.ownerId === req.userId;
   const now = new Date();
 
   if (isOwner) {
-    assertStatus(booking, ["ACCEPTED"], "cancel");
+    assertStatus(booking, ["ACCEPTED", "CONFIRMED"], "cancel");
     if (!req.body.reason) {
       throw new AppError(400, "Please give the renter a reason for cancelling", {
         reason: "A reason is required when the owner cancels",
       });
     }
   } else {
-    assertStatus(booking, ["PENDING", "ACCEPTED"], "cancel");
+    assertStatus(booking, ["PENDING", "ACCEPTED", "CONFIRMED"], "cancel");
   }
 
   if (booking.startTime <= now) {
     throw new AppError(409, "This booking has already started and can no longer be cancelled");
   }
 
+  const cancelledBy = isOwner ? "OWNER" : "RENTER";
+  let refundId = null;
   const updated = await prisma.$transaction(async (tx) => {
+    // Same lock order as payment capture, so a payment landing at the same
+    // moment either confirms first (and is refunded here) or arrives after
+    // the cancellation (and is refunded in full there).
+    await lockBooking(tx, booking.id);
     const cancelled = await applyTransition(
       tx,
       booking,
-      {
-        status: "CANCELLED",
-        cancelledBy: isOwner ? "OWNER" : "RENTER",
-        cancelReason: req.body.reason,
-        cancelledAt: now,
-      },
+      { status: "CANCELLED", cancelledBy, cancelReason: req.body.reason, cancelledAt: now },
       { startTime: { gt: now } }
     );
+
+    const payment = await tx.payment.findUnique({ where: { bookingId: booking.id } });
+    if (payment?.status === "CAPTURED") {
+      const refund = computeCancellationRefund(cancelled, cancelledBy, now, true);
+      if (refund.total.gt(0)) {
+        const record = await createRefundRecord(tx, {
+          booking: cancelled, payment, purpose: "CANCELLATION", amount: refund.total,
+          breakdown: { rental: fmt(refund.rental), platformFee: fmt(refund.platformFee), deposit: fmt(refund.deposit) },
+          reason: refund.explanation, initiatedBy: cancelledBy, initiatedById: req.userId,
+          idempotencyKey: `cancel:${booking.id}`,
+        });
+        refundId = record.id;
+      }
+      if (refund.deposit.gt(0)) {
+        await tx.booking.update({ where: { id: booking.id }, data: { depositStatus: "RELEASE_PENDING" } });
+      }
+    } else if (payment?.status === "CREATED") {
+      await tx.payment.update({ where: { id: payment.id }, data: { status: "VOIDED" } });
+      await logEvent(tx, { bookingId: booking.id, paymentId: payment.id, type: "ORDER_VOIDED", source: "USER", actorId: req.userId, data: { reason: "booking cancelled before payment" } });
+    }
+
     // The other party is the one who needs to know.
     await notifyBooking(tx, cancelled, isOwner ? "BOOKING_CANCELLED_BY_OWNER" : "BOOKING_CANCELLED_BY_RENTER");
-    return cancelled;
+    return tx.booking.findUnique({ where: { id: booking.id }, include: listInclude });
   });
+
+  // Sent after the cancellation is committed; retried by the sweep if needed.
+  if (refundId) await sendRefund(refundId);
   res.json(updated);
 }
 
@@ -328,7 +384,10 @@ export async function cancelBooking(req, res) {
 export async function startBooking(req, res) {
   const booking = await loadForAction(req.params.id, req.userId);
   assertOwner(booking, req.userId, "start");
-  assertStatus(booking, ["ACCEPTED"], "start");
+  if (booking.status === "ACCEPTED") {
+    throw new AppError(409, "The renter hasn't paid yet, so the item can't be handed over");
+  }
+  assertStatus(booking, ["CONFIRMED"], "start");
 
   const now = new Date();
   if (now.getTime() < booking.startTime.getTime() - HANDOVER_EARLY_MS) {
@@ -354,12 +413,17 @@ export async function completeBooking(req, res) {
 
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {
-    const completed = await applyTransition(tx, booking, { status: "COMPLETED", returnedAt: now });
+    // A held deposit stays held for the 48-hour claim window from now.
+    const completed = await applyTransition(tx, booking, {
+      status: "COMPLETED",
+      returnedAt: now,
+      ...(booking.depositStatus === "HELD" ? { depositReleaseAt: new Date(now.getTime() + CLAIM_WINDOW_MS) } : {}),
+    });
     await notifyBooking(tx, completed, "BOOKING_COMPLETED");
     return completed;
   });
 
-  // Reported now; the security deposit phase will use it to withhold late fees.
+  // The owner can use this to claim a late-return fee from the deposit.
   const lateByMinutes = Math.max(0, Math.ceil((now - booking.endTime) / 60000));
   res.json({ ...updated, lateByMinutes });
 }

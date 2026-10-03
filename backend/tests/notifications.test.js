@@ -3,7 +3,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
-  startServer, createContext, prisma, slot, requestBooking, shiftBooking, notificationsFor, HOUR,
+  startServer, createContext, prisma, slot, requestBooking, shiftBooking, payForBooking, notificationsFor, HOUR,
 } from "./helpers.js";
 import { notifyBooking } from "../src/utils/notifications.js";
 
@@ -87,6 +87,7 @@ test("owner cancels -> renter notified; renter cancels -> owner notified", async
 test("handover and return -> renter notified", async () => {
   const b6 = (await book(R2, slot(24 * 9), 2)).data;
   await patch(O, b6.id, "accept");
+  await payForBooking(api, R2, b6.id);
   await shiftBooking(b6.id, 30 * 60e3);
   assert.equal((await patch(O, b6.id, "start")).status, 200);
   await expectOne(R2, "BOOKING_STARTED", b6.id);
@@ -174,7 +175,7 @@ test("GET /notifications: own only, newest first, unread count, safe fields", as
   assert.equal(r.data.unreadCount, own.filter((n) => !n.readAt).length);
   assert.deepEqual(
     Object.keys(r.data.notifications[0]).sort(),
-    ["bookingId", "createdAt", "id", "message", "readAt", "title", "type"],
+    ["bookingId", "bookingRole", "createdAt", "id", "message", "readAt", "title", "type"],
     "no recipientId or booking internals exposed"
   );
 

@@ -1,9 +1,9 @@
-// Prisma schema for RentAny: users (auth), items (listings with images) and
-// hourly bookings. Payments, deposits, reviews, maps and the chatbot are
-// later phases and are intentionally left out.
+// Prisma schema for RentAny: users (auth), items (listings with media),
+// hourly bookings, payments (Razorpay) and refundable security deposits.
+// Reviews, maps and the chatbot are later phases and are intentionally left out.
 //
 // Raw-SQL constraints Prisma can't express live in the migration files:
-// see migrations/*_bookings/migration.sql (CHECKs + the overlap exclusion).
+// see migrations/*_bookings, *_payments_* (CHECKs + the overlap exclusion).
 
 generator client {
   provider = "prisma-client-js"
@@ -14,6 +14,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  USER
+  ADMIN // can resolve disputed deposit claims; set manually in the database for now
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   name         String
@@ -22,6 +27,7 @@ model User {
   // Required at registration (enforced by the API), but kept nullable here
   // because accounts created before that rule may not have one.
   phone        String?
+  role         UserRole @default(USER)
   createdAt    DateTime @default(now())
 
   items           Item[]
@@ -32,19 +38,22 @@ model User {
 }
 
 model Item {
-  id            Int      @id @default(autoincrement())
-  title         String
-  description   String
-  category      String
-  pricePerHour  Decimal  @db.Decimal(10, 2)
+  id              Int      @id @default(autoincrement())
+  title           String
+  description     String
+  category        String
+  pricePerHour    Decimal  @db.Decimal(10, 2)
+  // Refundable deposit the owner asks for (0 to 50,000). Copied onto each
+  // booking when it is requested, so later changes don't affect it.
+  securityDeposit Decimal  @default(0) @db.Decimal(10, 2)
   // Legacy single image, kept for backward compatibility. Now maintained as
   // the listing's cover: the first IMAGE in media (null if there is none).
-  imageUrl      String?
-  location      String
+  imageUrl        String?
+  location        String
   // Owner's on/off switch for the listing. Whether a specific time slot is
-  // free comes from the item's ACCEPTED/ACTIVE bookings.
-  isAvailable   Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  // free comes from the item's ACCEPTED/CONFIRMED/ACTIVE bookings.
+  isAvailable     Boolean  @default(true)
+  createdAt       DateTime @default(now())
 
   owner         User     @relation(fields: [ownerId], references: [id])
   ownerId       Int
@@ -100,10 +109,11 @@ model MediaUpload {
 
 enum BookingStatus {
   PENDING   // renter requested, waiting for the owner
-  ACCEPTED  // owner approved; the slot is reserved
+  ACCEPTED  // owner approved; slot reserved; waiting for the renter to pay (until paymentDueAt)
+  CONFIRMED // paid (or grandfathered from before payments); ready for handover
   REJECTED  // owner declined, or auto-declined because the slot was given away
   CANCELLED // withdrawn by renter or owner before the rental started
-  EXPIRED   // owner never responded before the start time
+  EXPIRED   // owner never responded before the start time, or renter never paid in time
   ACTIVE    // owner handed the item over; rental in progress
   COMPLETED // owner confirmed the item was returned
 }
@@ -111,6 +121,16 @@ enum BookingStatus {
 enum CancelledBy {
   RENTER
   OWNER
+}
+
+enum DepositStatus {
+  NOT_COLLECTED      // nothing held: unpaid, zero deposit, or grandfathered booking
+  HELD               // paid and held until the claim window after return closes
+  CLAIM_OPEN         // at least one claim is open or disputed: whole deposit held
+  RELEASE_PENDING    // refund of the (remaining) deposit requested, not yet processed
+  REFUNDED           // fully returned
+  PARTIALLY_REFUNDED // returned minus approved deductions
+  FORFEITED          // fully deducted
 }
 
 model Booking {
@@ -129,9 +149,16 @@ model Booking {
   endTime      DateTime      @db.Timestamptz(3)
   hours        Int
 
-  // Snapshots, so later price changes don't affect existing bookings.
-  pricePerHour Decimal       @db.Decimal(10, 2)
-  rentalAmount Decimal       @db.Decimal(10, 2)
+  // Financial snapshot taken when the renter requests, so later price, fee
+  // or deposit changes never affect this booking.
+  pricePerHour    Decimal    @db.Decimal(10, 2)
+  rentalAmount    Decimal    @db.Decimal(10, 2)
+  platformFee     Decimal    @db.Decimal(10, 2)
+  securityDeposit Decimal    @db.Decimal(10, 2)
+  totalPayable    Decimal    @db.Decimal(10, 2) // rental + fee + deposit (CHECK)
+  // Cancellation/refund rules this booking was made under ("LEGACY" = from
+  // before payments: nothing to pay, nothing to refund).
+  policyCode      String
 
   status       BookingStatus @default(PENDING)
   renterNote   String?
@@ -144,21 +171,188 @@ model Booking {
   startedAt    DateTime?
   returnedAt   DateTime?
 
+  paymentDueAt     DateTime?     @db.Timestamptz(3) // set on acceptance
+  paidAt           DateTime?
+  depositStatus    DepositStatus @default(NOT_COLLECTED)
+  depositReleaseAt DateTime?     @db.Timestamptz(3) // end of the claim window after return
+
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
   notifications Notification[]
+  payment       Payment?
+  refunds       Refund[]
+  depositClaims DepositClaim[]
+  paymentEvents PaymentEvent[]
 
   @@index([itemId, startTime])
   @@index([renterId, createdAt])
   @@index([ownerId, createdAt])
   @@index([status])
+  @@index([status, paymentDueAt])
+  @@index([depositStatus, depositReleaseAt])
 }
 
-// One value per booking event that the other party should hear about.
+enum PaymentStatus {
+  CREATED  // Razorpay order exists, not paid yet (failed attempts keep it here)
+  CAPTURED // money received
+  VOIDED   // booking expired or was cancelled before payment
+}
+
+// The single charge for a booking: one Razorpay order, reused for retries.
+model Payment {
+  id                   Int           @id @default(autoincrement())
+  booking              Booking       @relation(fields: [bookingId], references: [id])
+  bookingId            Int           @unique // at most one charge per booking
+  razorpayOrderId      String        @unique
+  razorpayPaymentId    String?       @unique // the payment that paid the order
+  amount               Decimal       @db.Decimal(10, 2) // booking.totalPayable when the order was created
+  currency             String        @default("INR")
+  status               PaymentStatus @default(CREATED)
+  method               String?
+  failedAttempts       Int           @default(0)
+  lastErrorCode        String?
+  lastErrorReason      String?
+  lastErrorDescription String?
+  capturedAt           DateTime?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  refunds Refund[]
+  events  PaymentEvent[]
+
+  @@index([status])
+}
+
+enum RefundPurpose {
+  CANCELLATION        // cancelled after paying (amount per the booking's policy)
+  DEPOSIT_RELEASE     // deposit minus approved deductions, after the claim window
+  BOOKING_NOT_PAYABLE // payment captured after the booking expired or was cancelled
+  DUPLICATE_PAYMENT   // a second captured payment on the same order
+  ADMIN_ADJUSTMENT    // manual correction (future admin panel)
+}
+
+enum RefundStatus {
+  REQUESTED // our record exists; Razorpay hasn't confirmed it yet (or the call's outcome is unknown)
+  PENDING   // Razorpay accepted it and is processing
+  PROCESSED // money returned
+  FAILED    // Razorpay rejected or failed it; will be retried
+}
+
+enum Actor {
+  RENTER
+  OWNER
+  ADMIN
+  SYSTEM
+}
+
+model Refund {
+  id                   Int           @id @default(autoincrement())
+  payment              Payment       @relation(fields: [paymentId], references: [id])
+  paymentId            Int
+  booking              Booking       @relation(fields: [bookingId], references: [id])
+  bookingId            Int
+  // Usually payment.razorpayPaymentId; differs only for a duplicate payment.
+  razorpayPaymentId    String
+  razorpayRefundId     String?       @unique
+  // One logical refund = one key ("cancel:42", "deposit:42", "dup:pay_X"...),
+  // so retries and duplicate triggers can never refund twice.
+  idempotencyKey       String        @unique
+  purpose              RefundPurpose
+  amount               Decimal       @db.Decimal(10, 2) // CHECK > 0
+  breakdown            Json          // { rental, platformFee, deposit } as shown to users
+  status               RefundStatus  @default(REQUESTED)
+  reason               String
+  initiatedBy          Actor
+  initiatedById        Int?
+  attempts             Int           @default(0)
+  // Short lease while one process is talking to Razorpay about this refund,
+  // so two senders (e.g. a request and the cron sweep) can never both create it.
+  lockedUntil          DateTime?
+  lastErrorCode        String?
+  lastErrorDescription String?
+  requestedAt          DateTime      @default(now())
+  processedAt          DateTime?
+  failedAt             DateTime?
+  updatedAt            DateTime      @updatedAt
+
+  @@index([bookingId])
+  @@index([status])
+}
+
+enum DepositClaimReason {
+  DAMAGE
+  LATE_RETURN
+  MISSING_PARTS
+  OTHER
+}
+
+enum DepositClaimStatus {
+  OPEN      // raised by the owner, waiting for the renter
+  ACCEPTED  // renter agreed: amountApproved = amountClaimed
+  DISPUTED  // renter disagreed: an admin decides
+  APPROVED  // admin approved all or part (amountApproved)
+  REJECTED  // admin rejected (nothing deducted)
+  WITHDRAWN // owner withdrew it
+}
+
+model DepositClaim {
+  id             Int                @id @default(autoincrement())
+  booking        Booking            @relation(fields: [bookingId], references: [id])
+  bookingId      Int
+  raisedById     Int
+  reason         DepositClaimReason
+  description    String
+  amountClaimed  Decimal            @db.Decimal(10, 2) // CHECK > 0
+  amountApproved Decimal?           @db.Decimal(10, 2) // CHECK 0 <= approved <= claimed
+  status         DepositClaimStatus @default(OPEN)
+  renterResponse String?
+  resolvedById   Int?
+  resolutionNote String?
+  createdAt      DateTime           @default(now())
+  respondedAt    DateTime?
+  resolvedAt     DateTime?
+
+  @@index([bookingId])
+  @@index([status])
+}
+
+enum PaymentEventSource {
+  CHECKOUT_CALLBACK
+  WEBHOOK
+  RECONCILIATION
+  USER
+  ADMIN
+  SYSTEM
+}
+
+// Append-only audit trail of every money-related event. Never updated or
+// deleted by the application (a trigger enforces it).
+model PaymentEvent {
+  id              Int                @id @default(autoincrement())
+  booking         Booking?           @relation(fields: [bookingId], references: [id])
+  bookingId       Int?
+  payment         Payment?           @relation(fields: [paymentId], references: [id])
+  paymentId       Int?
+  refundId        Int?
+  claimId         Int?
+  type            String
+  source          PaymentEventSource
+  actorId         Int?
+  // Razorpay webhook event id (x-razorpay-event-id): a redelivered webhook
+  // can't be processed twice.
+  razorpayEventId String?            @unique
+  amount          Decimal?           @db.Decimal(10, 2)
+  data            Json
+  createdAt       DateTime           @default(now())
+
+  @@index([bookingId, createdAt])
+  @@index([paymentId])
+}
+
 enum NotificationType {
   BOOKING_REQUESTED           // -> owner: a renter sent a request
-  BOOKING_ACCEPTED            // -> renter
+  BOOKING_ACCEPTED            // -> renter: accepted, please pay
   BOOKING_REJECTED            // -> renter: owner declined
   BOOKING_AUTO_REJECTED       // -> renter: owner accepted an overlapping request
   BOOKING_CANCELLED_BY_RENTER // -> owner
@@ -166,10 +360,22 @@ enum NotificationType {
   BOOKING_EXPIRED             // -> renter: owner never responded
   BOOKING_STARTED             // -> renter: item handed over
   BOOKING_COMPLETED           // -> renter: return confirmed
+  PAYMENT_RECEIVED            // -> renter and owner: paid, booking confirmed
+  PAYMENT_FAILED              // -> renter: a payment attempt failed
+  BOOKING_PAYMENT_EXPIRED     // -> renter and owner: not paid in time, slot released
+  REFUND_INITIATED            // -> renter
+  REFUND_PROCESSED            // -> renter
+  REFUND_FAILED               // -> renter
+  DEPOSIT_CLAIM_RAISED        // -> renter
+  DEPOSIT_CLAIM_ACCEPTED      // -> owner
+  DEPOSIT_CLAIM_DISPUTED      // -> owner
+  DEPOSIT_CLAIM_WITHDRAWN     // -> renter
+  DEPOSIT_CLAIM_RESOLVED      // -> renter and owner: admin decision
+  DEPOSIT_RELEASED            // -> renter and owner: deposit settled
 }
 
 // Persistent in-app notifications, always created server-side in the same
-// transaction as the booking change they describe.
+// transaction as the change they describe.
 model Notification {
   id          Int              @id @default(autoincrement())
 
@@ -182,12 +388,13 @@ model Notification {
   type        NotificationType
   title       String
   message     String
+  // Identifies the event ("BOOKING_ACCEPTED:booking:42", "REFUND_PROCESSED:refund:7"),
+  // so a retried or redelivered event can never notify the same person twice.
+  dedupeKey   String
   readAt      DateTime?
   createdAt   DateTime         @default(now())
 
-  // Each booking event happens at most once, so this blocks duplicates if a
-  // transition is ever retried.
-  @@unique([bookingId, recipientId, type])
+  @@unique([recipientId, dedupeKey])
   @@index([recipientId, createdAt])
   @@index([recipientId, readAt])
 }

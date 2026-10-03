@@ -8,13 +8,12 @@ const TOAST_MS = 6000;
 // More new notifications than this at once become a single summary toast.
 const MAX_TOASTS_AT_ONCE = 3;
 
-// Notifications the owner receives; everything else goes to the renter.
-const OWNER_TYPES = ["BOOKING_REQUESTED", "BOOKING_CANCELLED_BY_RENTER"];
-
-// Where clicking a notification should take the user, if anywhere.
+// Where clicking a notification should take the user, if anywhere. The server
+// says which side of the booking the reader is on (some events, like
+// payments and deposits, notify both sides).
 export function notificationLink(n) {
   if (!n.bookingId) return null;
-  const as = OWNER_TYPES.includes(n.type) ? "owner" : "renter";
+  const as = n.bookingRole === "owner" ? "owner" : "renter";
   return `/bookings?as=${as}&booking=${n.bookingId}`;
 }
 

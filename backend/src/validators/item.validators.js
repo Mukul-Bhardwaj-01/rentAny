@@ -1,5 +1,22 @@
 import { checkString } from "../middleware/validate.middleware.js";
 import { ISSUED_PUBLIC_ID, MEDIA_LIMITS } from "../utils/mediaRules.js";
+import { checkMoney } from "./money.validators.js";
+
+const MAX_SECURITY_DEPOSIT = 50000;
+
+function checkSecurityDeposit(input, values, errors, { required }) {
+  checkMoney(input, "securityDeposit", "Security deposit", { min: 0, max: MAX_SECURITY_DEPOSIT, required }, values, errors);
+  if (!required && values.securityDeposit === undefined && !errors.securityDeposit) values.securityDeposit = "0.00";
+}
+
+// PATCH /api/items/:id/security-deposit  body: { securityDeposit }
+// Only affects bookings requested after the change.
+export function securityDepositValidator(input) {
+  const values = {};
+  const errors = {};
+  checkSecurityDeposit(input, values, errors, { required: true });
+  return { values, errors };
+}
 
 const MAX_PRICE = 100000;
 
@@ -44,6 +61,7 @@ export function createItemValidator(input) {
   checkString(input, "category", "Category", { min: 2, max: 50 }, values, errors);
   checkString(input, "location", "Location", { min: 2, max: 200 }, values, errors);
   checkMediaIds(input, values, errors, { required: false });
+  checkSecurityDeposit(input, values, errors, { required: false });
 
   // Multipart form fields always arrive as strings.
   const rawPrice = typeof input.pricePerHour === "string" ? input.pricePerHour.trim() : input.pricePerHour;
