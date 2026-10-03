@@ -39,7 +39,7 @@ export async function getItemById(req, res) {
     where: { id: req.params.id },
     include: {
       // No phone here: contact details are shared only once a booking is paid.
-      owner: { select: { id: true, name: true } },
+      owner: { select: { id: true, name: true, ownerRatingSum: true, ownerRatingCount: true } },
       media: { select: mediaSelect, orderBy: mediaOrder },
     },
   });

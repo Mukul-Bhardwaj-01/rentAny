@@ -21,6 +21,7 @@ import {
   securityDepositValidator,
 } from "../validators/item.validators.js";
 import { getItemAvailability } from "../controllers/booking.controller.js";
+import { getItemReviews } from "../controllers/review.controller.js";
 import { availabilityValidator } from "../validators/booking.validators.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -58,6 +59,9 @@ router.delete(
   asyncHandler(deleteItemMedia)
 );
 
+
+// Public: renters' reviews of this item, with the average rating.
+router.get("/:id/reviews", validate(itemIdValidator, "params"), asyncHandler(getItemReviews));
 
 // Owner sets the refundable deposit for future bookings (0 to 50,000).
 router.patch(

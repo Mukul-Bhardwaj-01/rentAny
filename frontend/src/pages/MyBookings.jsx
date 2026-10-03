@@ -4,6 +4,8 @@ import api, { getErrorMessage } from "../api/axios.js";
 import ItemImage from "../components/ItemImage.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import PaymentPanel from "../components/PaymentPanel.jsx";
+import ReviewPanel from "../components/ReviewPanel.jsx";
+import { RatingBadge } from "../components/StarRating.jsx";
 import { formatPrice, formatDateTime } from "../utils/format.js";
 
 const STATUSES = ["PENDING", "ACCEPTED", "CONFIRMED", "ACTIVE", "COMPLETED", "REJECTED", "CANCELLED", "EXPIRED"];
@@ -30,6 +32,7 @@ export default function MyBookings() {
   const [contacts, setContacts] = useState({});
   // Booking id -> "open" | "pay" (open and start paying right away).
   const [panels, setPanels] = useState({});
+  const [reviewsOpen, setReviewsOpen] = useState({});
 
   // `silent` refreshes the list in place without the loading state.
   async function fetchBookings({ silent = false } = {}) {
@@ -237,6 +240,20 @@ export default function MyBookings() {
       );
     }
 
+    // Completed rentals can be reviewed once by each side.
+    if (b.status === "COMPLETED") {
+      const reviewed = b.reviews?.length > 0;
+      actions.push(
+        <button
+          key="review"
+          className={`${btn} ${reviewed || reviewsOpen[b.id] ? "border" : "bg-amber-500 text-white"}`}
+          onClick={() => setReviewsOpen((r) => ({ ...r, [b.id]: !r[b.id] }))}
+        >
+          {reviewsOpen[b.id] ? "Hide reviews" : reviewed ? `Reviews (you gave ${b.reviews[0].rating}★)` : "Leave a review"}
+        </button>
+      );
+    }
+
     return actions;
   }
 
@@ -313,7 +330,12 @@ export default function MyBookings() {
                   )}
                   <span className="text-slate-500">
                     {" "}· {as === "owner" ? `Renter: ${b.renter.name}` : `Owner: ${b.owner.name}`}
-                  </span>
+                  </span>{" "}
+                  {as === "owner" ? (
+                    <RatingBadge sum={b.renter.renterRatingSum} count={b.renter.renterRatingCount} />
+                  ) : (
+                    <RatingBadge sum={b.owner.ownerRatingSum} count={b.owner.ownerRatingCount} />
+                  )}
                 </p>
                 {b.renterNote && <p className="text-sm text-slate-500">Note: {b.renterNote}</p>}
                 {b.responseNote && <p className="text-sm text-slate-500">Owner: {b.responseNote}</p>}
@@ -331,6 +353,7 @@ export default function MyBookings() {
                     onChanged={() => fetchBookings({ silent: true })}
                   />
                 )}
+                {reviewsOpen[b.id] && <ReviewPanel bookingId={b.id} onReviewed={() => fetchBookings({ silent: true })} />}
               </div>
             </li>
           ))}

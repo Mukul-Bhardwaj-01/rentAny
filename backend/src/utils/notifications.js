@@ -27,6 +27,8 @@ const RECIPIENTS = {
   DEPOSIT_CLAIM_WITHDRAWN: ["renter"],
   DEPOSIT_CLAIM_RESOLVED: ["renter", "owner"],
   DEPOSIT_RELEASED: ["renter", "owner"],
+  // Depends on who wrote it: the caller passes the reviewed side in `roles`.
+  REVIEW_RECEIVED: [],
 };
 
 const hoursText = (h) => `${h} hour${h === 1 ? "" : "s"}`;
@@ -125,6 +127,10 @@ const TEMPLATES = {
     title: "Deposit claim resolved",
     message: `An admin reviewed the claim for "${b.item.title}": ${rs(x.approved)} of ${rs(x.amount)} will be deducted from the deposit.`,
   }),
+  REVIEW_RECEIVED: (b, _role, x) => ({
+    title: "New review",
+    message: `${x.authorName} rated you ${x.rating}/5 for the rental of "${b.item.title}".`,
+  }),
   DEPOSIT_RELEASED: (b, role, x) => ({
     title: "Security deposit settled",
     message:
@@ -141,10 +147,10 @@ const TEMPLATES = {
 // `key` identifies the event when it can happen more than once per booking
 // (e.g. "refund:7", "claim:3"); by default it is the booking itself.
 // The (recipientId, dedupeKey) unique index makes a repeated event a no-op.
-export async function notifyBookings(tx, bookings, type, { key, extra } = {}) {
+export async function notifyBookings(tx, bookings, type, { key, extra, roles } = {}) {
   const data = [];
   for (const b of bookings) {
-    for (const role of RECIPIENTS[type]) {
+    for (const role of roles ?? RECIPIENTS[type]) {
       data.push({
         recipientId: role === "owner" ? b.ownerId : b.renterId,
         bookingId: b.id,

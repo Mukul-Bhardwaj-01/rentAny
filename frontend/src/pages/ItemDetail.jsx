@@ -6,6 +6,8 @@ import FieldError from "../components/FieldError.jsx";
 import MediaGallery from "../components/MediaGallery.jsx";
 import ManageMedia from "../components/ManageMedia.jsx";
 import { mediaForItem } from "../utils/media.js";
+import ItemReviews from "../components/ItemReviews.jsx";
+import { Stars, RatingBadge, ratingOf } from "../components/StarRating.jsx";
 import { formatPrice, formatDateTime, toDateTimeLocalValue } from "../utils/format.js";
 
 // Must match the backend's booking rules (booking.validators.js).
@@ -113,17 +115,24 @@ export default function ItemDetail() {
         <h1 className="text-2xl font-bold mt-4">{item.title}</h1>
         <p className="text-slate-500">{item.category} · {item.location}</p>
         <p className="mt-2 text-xl font-bold">₹{formatPrice(item.pricePerHour)}/hr</p>
+        <p className="mt-1">
+          <Stars {...ratingOf(item.ratingSum, item.ratingCount)} />
+        </p>
         {Number(item.securityDeposit) > 0 && (
           <p className="text-sm text-slate-600">Refundable security deposit: ₹{formatPrice(item.securityDeposit)}</p>
         )}
         <p className="mt-4 whitespace-pre-line">{item.description}</p>
-        <p className="mt-4 text-sm text-slate-500">Listed by {item.owner?.name}</p>
+        <p className="mt-4 text-sm text-slate-500 flex flex-wrap items-center gap-2">
+          <span>Listed by {item.owner?.name}</span>
+          <RatingBadge sum={item.owner?.ownerRatingSum} count={item.owner?.ownerRatingCount} />
+        </p>
         {isOwner && (
           <>
             <DepositEditor item={item} onSaved={(securityDeposit) => setItem({ ...item, securityDeposit })} />
             <ManageMedia item={item} onChange={(updated) => setItem({ ...item, ...updated })} />
           </>
         )}
+        <ItemReviews itemId={item.id} />
       </div>
 
       <div>

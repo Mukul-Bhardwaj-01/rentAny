@@ -26,6 +26,8 @@ import {
   raiseClaimValidator,
   disputeClaimValidator,
 } from "../validators/payment.validators.js";
+import { createReview, getBookingReviews } from "../controllers/review.controller.js";
+import { reviewValidator } from "../validators/review.validators.js";
 
 const router = Router();
 const byId = validate(bookingIdValidator, "params");
@@ -54,5 +56,9 @@ router.post("/:id/deposit/claims", byId, validate(raiseClaimValidator), asyncHan
 router.post("/:id/deposit/claims/:claimId/accept", byClaim, asyncHandler(acceptDepositClaim));
 router.post("/:id/deposit/claims/:claimId/dispute", byClaim, validate(disputeClaimValidator), asyncHandler(disputeDepositClaim));
 router.post("/:id/deposit/claims/:claimId/withdraw", byClaim, asyncHandler(withdrawDepositClaim));
+
+// Reviews (renter and owner of a completed booking, one each).
+router.post("/:id/reviews", byId, validate(reviewValidator), asyncHandler(createReview));
+router.get("/:id/reviews", byId, asyncHandler(getBookingReviews));
 
 export default router;

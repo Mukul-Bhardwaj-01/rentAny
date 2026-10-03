@@ -8,6 +8,7 @@ import notificationRoutes from "./routes/notification.routes.js";
 import mediaRoutes from "./routes/media.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import internalRoutes from "./routes/internal.routes.js";
+import userRoutes from "./routes/user.routes.js";
 import { razorpayWebhook } from "./controllers/payment.controller.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
 import { notFound, errorHandler } from "./middleware/error.middleware.js";
@@ -37,6 +38,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/media", mediaRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/internal", internalRoutes);
+app.use("/api/users", userRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 

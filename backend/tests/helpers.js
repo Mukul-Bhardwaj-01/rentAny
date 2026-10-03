@@ -93,6 +93,7 @@ export function createContext(api, label) {
     });
     await prisma.refund.deleteMany({ where: { bookingId: { in: bookingIds } } });
     await prisma.depositClaim.deleteMany({ where: { bookingId: { in: bookingIds } } });
+    await prisma.review.deleteMany({ where: { bookingId: { in: bookingIds } } });
     await prisma.payment.deleteMany({ where: { bookingId: { in: bookingIds } } });
     await prisma.notification.deleteMany({ where: { recipientId: { in: ids } } });
     await prisma.booking.deleteMany({ where: { id: { in: bookingIds } } });

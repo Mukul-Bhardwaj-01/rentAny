@@ -24,8 +24,9 @@ const HANDOVER_EARLY_MS = 60 * 60 * 1000;
 
 const listInclude = {
   item: { select: { id: true, title: true, imageUrl: true, location: true } },
-  renter: { select: { id: true, name: true } },
-  owner: { select: { id: true, name: true } },
+  // Each side's rating in the role they play here (shown to the other side).
+  renter: { select: { id: true, name: true, renterRatingSum: true, renterRatingCount: true } },
+  owner: { select: { id: true, name: true, ownerRatingSum: true, ownerRatingCount: true } },
 };
 
 // Bookings use half-open intervals [start, end): back-to-back slots don't overlap.
@@ -203,7 +204,8 @@ export async function getMyBookings(req, res) {
       [as === "owner" ? "ownerId" : "renterId"]: req.userId,
       ...(status ? { status } : {}),
     },
-    include: listInclude,
+    // `reviews` = the caller's own review of each booking, if any.
+    include: { ...listInclude, reviews: { where: { authorId: req.userId }, select: { id: true, rating: true } } },
     orderBy: { createdAt: "desc" },
   });
 

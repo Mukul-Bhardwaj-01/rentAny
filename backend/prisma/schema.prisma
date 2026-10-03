@@ -28,6 +28,12 @@ model User {
   // because accounts created before that rule may not have one.
   phone        String?
   role         UserRole @default(USER)
+  // Ratings received, kept as exact sums (average = sum / count), updated in
+  // the same transaction as each review. Separate for each side of a rental.
+  ownerRatingSum    Int @default(0)
+  ownerRatingCount  Int @default(0)
+  renterRatingSum   Int @default(0)
+  renterRatingCount Int @default(0)
   createdAt    DateTime @default(now())
 
   items           Item[]
@@ -35,6 +41,8 @@ model User {
   bookingRequests Booking[] @relation("OwnerBookings")
   notifications   Notification[]
   mediaUploads    MediaUpload[]
+  reviewsWritten  Review[] @relation("ReviewsWritten")
+  reviewsReceived Review[] @relation("ReviewsReceived")
 }
 
 model Item {
@@ -53,6 +61,9 @@ model Item {
   // Owner's on/off switch for the listing. Whether a specific time slot is
   // free comes from the item's ACCEPTED/CONFIRMED/ACTIVE bookings.
   isAvailable     Boolean  @default(true)
+  // Ratings from renters' reviews (average = ratingSum / ratingCount).
+  ratingSum       Int      @default(0)
+  ratingCount     Int      @default(0)
   createdAt       DateTime @default(now())
 
   owner         User     @relation(fields: [ownerId], references: [id])
@@ -61,6 +72,7 @@ model Item {
   bookings      Booking[]
   media         ItemMedia[]
   mediaUploads  MediaUpload[]
+  reviews       Review[]
 }
 
 enum MediaType {
@@ -184,6 +196,7 @@ model Booking {
   refunds       Refund[]
   depositClaims DepositClaim[]
   paymentEvents PaymentEvent[]
+  reviews       Review[]
 
   @@index([itemId, startTime])
   @@index([renterId, createdAt])
@@ -372,6 +385,7 @@ enum NotificationType {
   DEPOSIT_CLAIM_WITHDRAWN     // -> renter
   DEPOSIT_CLAIM_RESOLVED      // -> renter and owner: admin decision
   DEPOSIT_RELEASED            // -> renter and owner: deposit settled
+  REVIEW_RECEIVED             // -> whoever was reviewed
 }
 
 // Persistent in-app notifications, always created server-side in the same
@@ -397,4 +411,32 @@ model Notification {
   @@unique([recipientId, dedupeKey])
   @@index([recipientId, createdAt])
   @@index([recipientId, readAt])
+}
+
+enum ReviewDirection {
+  RENTER_TO_OWNER // the renter reviews the owner and the item
+  OWNER_TO_RENTER // the owner reviews the renter
+}
+
+// One review per person per completed booking. Who wrote it, who it is
+// about and which item it covers are always derived from the booking.
+model Review {
+  id        Int             @id @default(autoincrement())
+  booking   Booking         @relation(fields: [bookingId], references: [id])
+  bookingId Int
+  author    User            @relation("ReviewsWritten", fields: [authorId], references: [id])
+  authorId  Int
+  subject   User            @relation("ReviewsReceived", fields: [subjectId], references: [id])
+  subjectId Int
+  // Set for renter -> owner reviews (they also rate the item).
+  item      Item?           @relation(fields: [itemId], references: [id])
+  itemId    Int?
+  direction ReviewDirection
+  rating    Int             // CHECK 1..5
+  comment   String?
+  createdAt DateTime        @default(now())
+
+  @@unique([bookingId, authorId])
+  @@index([subjectId, direction, createdAt])
+  @@index([itemId, createdAt])
 }
