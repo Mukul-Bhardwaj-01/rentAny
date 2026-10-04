@@ -8,6 +8,7 @@ import CreateItem from "./pages/CreateItem.jsx";
 import ItemDetail from "./pages/ItemDetail.jsx";
 import MyBookings from "./pages/MyBookings.jsx";
 import NotFound from "./pages/NotFound.jsx";
+import ChatWidget from "./components/ChatWidget.jsx";
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
         />
         <Route path="*" element={<NotFound />} />
       </Routes>
+      <ChatWidget />
     </>
   );
 }

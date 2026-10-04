@@ -7,6 +7,7 @@ import MediaGallery from "../components/MediaGallery.jsx";
 import ManageMedia from "../components/ManageMedia.jsx";
 import { mediaForItem } from "../utils/media.js";
 import ItemReviews from "../components/ItemReviews.jsx";
+import LocationMap from "../components/LocationMap.jsx";
 import { Stars, RatingBadge, ratingOf } from "../components/StarRating.jsx";
 import { formatPrice, formatDateTime, toDateTimeLocalValue } from "../utils/format.js";
 
@@ -122,6 +123,7 @@ export default function ItemDetail() {
           <p className="text-sm text-slate-600">Refundable security deposit: ₹{formatPrice(item.securityDeposit)}</p>
         )}
         <p className="mt-4 whitespace-pre-line">{item.description}</p>
+        <LocationMap location={item.location} title={item.title} />
         <p className="mt-4 text-sm text-slate-500 flex flex-wrap items-center gap-2">
           <span>Listed by {item.owner?.name}</span>
           <RatingBadge sum={item.owner?.ownerRatingSum} count={item.owner?.ownerRatingCount} />

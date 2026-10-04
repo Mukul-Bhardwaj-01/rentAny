@@ -38,6 +38,12 @@ if (!process.env.CRON_SECRET) {
   console.warn("CRON_SECRET is not set: the scheduled payment sweep endpoint is disabled.");
 }
 
+// Grok (xAI) for the rental assistant (optional: without a key the chat
+// falls back to a plain catalog search).
+if (!process.env.GROK_API_KEY) {
+  console.warn("GROK_API_KEY is not set: the rental assistant will use plain catalog search.");
+}
+
 // Comma-separated list of frontend origins allowed to call the API.
 export const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:5173")
   .split(",")
