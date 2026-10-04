@@ -24,7 +24,7 @@ export async function register(req, res) {
 
   res.status(201).json({
     token,
-    user: { id: user.id, name: user.name, email: user.email },
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
   });
 }
 
@@ -46,7 +46,7 @@ export async function login(req, res) {
 
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email },
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
   });
 }
 
@@ -54,7 +54,7 @@ export async function login(req, res) {
 export async function getProfile(req, res) {
   const user = await prisma.user.findUnique({
     where: { id: req.userId },
-    select: { id: true, name: true, email: true, phone: true, createdAt: true },
+    select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true },
   });
   // Token is valid but the account no longer exists.
   if (!user) throw new AppError(401, "Account not found");

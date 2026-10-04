@@ -19,6 +19,7 @@ export default function Navbar() {
           <>
             <Link to="/create-item" className="hover:underline">List an item</Link>
             <Link to="/bookings" className="hover:underline">My bookings</Link>
+            {user.role === "ADMIN" && <Link to="/admin" className="hover:underline">Admin</Link>}
             <NotificationBell />
             <span className="text-sm text-slate-300">Hi, {user.name}</span>
             <button onClick={handleLogout} className="bg-slate-700 px-3 py-1 rounded">

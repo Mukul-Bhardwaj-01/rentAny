@@ -1,10 +1,62 @@
-// Minimal admin API for disputes (no admin UI yet; admins are set manually
-// in the database). Every action is recorded in the PaymentEvent audit log.
+// Admin API for the admin panel (admins are set manually in the database).
+// Every money action is recorded in the PaymentEvent audit log.
 import prisma from "../config/prisma.js";
 import { AppError } from "../utils/AppError.js";
 import { fmt } from "../utils/money.js";
 import { resolveClaim } from "../utils/deposits.js";
 import { sendRefund, logEvent } from "../utils/payments.js";
+
+// GET /api/admin/overview  (read-only)
+// Counts, recent users/items, and refunds that need attention.
+export async function getOverview(req, res) {
+  const [users, admins, items, availableItems, bookingsByStatus, openClaims, disputedClaims, refundsNeedingAttention, recentUsers, recentItems] =
+    await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { role: "ADMIN" } }),
+      prisma.item.count(),
+      prisma.item.count({ where: { isAvailable: true } }),
+      prisma.booking.groupBy({ by: ["status"], _count: { _all: true } }),
+      prisma.depositClaim.count({ where: { status: "OPEN" } }),
+      prisma.depositClaim.count({ where: { status: "DISPUTED" } }),
+      prisma.refund.findMany({
+        where: { status: { in: ["FAILED", "REQUESTED"] } },
+        select: {
+          id: true, bookingId: true, purpose: true, amount: true, status: true, attempts: true,
+          lastErrorDescription: true, requestedAt: true,
+        },
+        orderBy: { requestedAt: "asc" },
+        take: 20,
+      }),
+      prisma.user.findMany({
+        select: { id: true, name: true, email: true, role: true, createdAt: true, _count: { select: { items: true, rentals: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+      prisma.item.findMany({
+        select: {
+          id: true, title: true, category: true, pricePerHour: true, isAvailable: true, createdAt: true,
+          owner: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+    ]);
+
+  res.json({
+    counts: {
+      users,
+      admins,
+      items,
+      availableItems,
+      bookings: Object.fromEntries(bookingsByStatus.map((b) => [b.status, b._count._all])),
+      openClaims,
+      disputedClaims,
+    },
+    refundsNeedingAttention: refundsNeedingAttention.map((r) => ({ ...r, amount: fmt(r.amount) })),
+    recentUsers: recentUsers.map(({ _count, ...u }) => ({ ...u, listings: _count.items, rentals: _count.rentals })),
+    recentItems: recentItems.map((i) => ({ ...i, pricePerHour: fmt(i.pricePerHour) })),
+  });
+}
 
 // GET /api/admin/deposit-claims?status=DISPUTED
 export async function listDepositClaims(req, res) {

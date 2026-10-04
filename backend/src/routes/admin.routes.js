@@ -1,15 +1,16 @@
 import { Router } from "express";
-import { listDepositClaims, resolveDepositClaim, retryRefund } from "../controllers/admin.controller.js";
+import { getOverview, listDepositClaims, resolveDepositClaim, retryRefund } from "../controllers/admin.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { requireAdmin } from "../middleware/admin.middleware.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { listClaimsValidator, resolveClaimValidator, idParamValidator } from "../validators/payment.validators.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
-// Admin API only (no admin UI yet). Admins are designated in the database.
+// Admin API (used by the admin panel). Admins are designated in the database.
 const router = Router();
 router.use(requireAuth, asyncHandler(requireAdmin));
 
+router.get("/overview", asyncHandler(getOverview));
 router.get("/deposit-claims", validate(listClaimsValidator, "query"), asyncHandler(listDepositClaims));
 router.post(
   "/deposit-claims/:id/resolve",

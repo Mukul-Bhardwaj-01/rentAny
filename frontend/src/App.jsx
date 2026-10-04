@@ -9,6 +9,8 @@ import ItemDetail from "./pages/ItemDetail.jsx";
 import MyBookings from "./pages/MyBookings.jsx";
 import NotFound from "./pages/NotFound.jsx";
 import ChatWidget from "./components/ChatWidget.jsx";
+import AdminRoute from "./components/AdminRoute.jsx";
+import AdminDashboard from "./pages/AdminDashboard.jsx";
 
 export default function App() {
   return (
@@ -33,6 +35,14 @@ export default function App() {
             <ProtectedRoute>
               <MyBookings />
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <AdminDashboard />
+            </AdminRoute>
           }
         />
         <Route path="*" element={<NotFound />} />
