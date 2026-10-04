@@ -52,8 +52,9 @@ The original plan is in [`rentAny workflow.pdf`](rentAny%20workflow.pdf); the up
 - In-app notification bell with unread count and pop-up toasts for every important booking, payment, refund, claim and review event.
 
 **AI rental assistant**
-- Chat widget that suggests listings for an occasion, need or budget, using an LLM through the backend (key never exposed to the browser).
-- Recommendations are **grounded in the live catalog**: the AI can only pick from real, available listings chosen by the server, and every pick is re-checked. Falls back to catalog search if the AI is unavailable.
+- Chat widget that suggests listings for an occasion, need or budget, using an LLM through the backend (key never exposed to the browser). Runs on **Groq** with the `openai/gpt-oss-120b` model (typical answer in about 1 second); any OpenAI-compatible API works.
+- Follow-up questions use the recent conversation (e.g. “which one is cheapest?”); per-user limit of 20 messages per 10 minutes.
+- Recommendations are **grounded in the live catalog**: the AI can only pick from real, available listings chosen by the server, and every pick is re-checked. Uses the API’s JSON mode for well-formed answers, refuses prompt-injection attempts, and falls back to catalog search if the AI is unavailable.
 
 **Admin panel**
 - Review and resolve deposit disputes; overview of users, listings, bookings and refunds needing attention (with retry).
@@ -70,7 +71,7 @@ The original plan is in [`rentAny workflow.pdf`](rentAny%20workflow.pdf); the up
 | Auth | JWT, bcrypt |
 | Media | Cloudinary (signed direct uploads) |
 | Payments | Razorpay Standard Checkout (test mode) |
-| AI assistant | Grok (xAI) or Groq — any OpenAI-compatible chat API |
+| AI assistant | Groq API, model `openai/gpt-oss-120b` (any OpenAI-compatible chat API, e.g. xAI Grok, also works) |
 | Maps | Google Maps embed + directions links |
 | Tests | Node.js built-in test runner (`node:test`) |
 
@@ -88,7 +89,7 @@ rentAny/
 ### Prerequisites
 - Node.js 18+ (developed on Node 22)
 - PostgreSQL 14+ with an empty database (e.g. `CREATE DATABASE rentany;`)
-- Free accounts: Cloudinary, Razorpay (**test mode**), and optionally an AI API key (xAI Grok or Groq)
+- Free accounts: Cloudinary, Razorpay (**test mode**), and optionally an AI API key (Groq recommended, or xAI Grok)
 
 ### Backend
 ```
@@ -109,7 +110,8 @@ npm run dev                # http://localhost:5000  (health: /api/health)
 | `RAZORPAY_WEBHOOK_SECRET` | for webhooks | Same secret as configured on the Razorpay webhook |
 | `CRON_SECRET` | for the scheduled sweep | Protects `/api/internal/payments/sweep` |
 | `GROK_API_KEY` | for the AI assistant | xAI or Groq key; without it the assistant uses catalog search |
-| `GROK_API_URL`, `GROK_MODEL` | no | Defaults: `https://api.x.ai/v1`, `grok-3-mini`. For Groq use `https://api.groq.com/openai/v1` and a Groq model name |
+| `GROK_API_URL`, `GROK_MODEL` | no | Defaults: `https://api.x.ai/v1`, `grok-3-mini`. For Groq use `https://api.groq.com/openai/v1` and `openai/gpt-oss-120b` (check the models your key can use in the Groq console) |
+| `GROK_REASONING_EFFORT` | no | For reasoning models; defaults to `low` for gpt-oss and grok-3-mini (`none` to disable) |
 
 Never commit `backend/.env` (it is git-ignored).
 
@@ -144,7 +146,7 @@ npm test
 | 4–13 Sep 2026 | Repository set up; React + Express skeleton; PostgreSQL + Prisma; registration/login (JWT, bcrypt); item listings with Cloudinary image upload; search |
 | 2 Oct 2026 | Validation and error handling across the API; CORS and configuration checks; booking module (requests, accept/reject, availability, overlap prevention, expiry); required phone numbers; persistent notifications with live updates |
 | 3 Oct 2026 | Multiple photos/videos per listing; secure direct-to-Cloudinary uploads |
-| 4 Oct 2026 | Razorpay payments and refundable security deposits with dispute handling; reviews and ratings; AI rental assistant; item maps and directions; Home filters and sorting; admin panel; UI/UX polish; profile dashboard with listing edit, pause and delete |
+| 4 Oct 2026 | Razorpay payments and refundable security deposits with dispute handling; reviews and ratings; AI rental assistant (live on Groq); item maps and directions; Home filters and sorting; admin panel; UI/UX polish; profile dashboard with listing edit, pause and delete |
 
 Compared with the original Gantt chart, the planned scope (booking, payments & deposit, admin & disputes) is implemented ahead of schedule; the remaining time is for hardening, deployment and new features (below).
 

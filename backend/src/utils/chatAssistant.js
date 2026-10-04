@@ -187,7 +187,7 @@ export async function answerChat({ message, history = [], filters = {}, userId }
       { role: "system", content: catalogMessage(candidates) },
       ...history.map((h) => ({ role: h.role, content: h.content })),
       { role: "user", content: message },
-    ]);
+    ], { json: true });
   } catch (err) {
     console.error("Grok call failed:", err instanceof GrokError ? `${err.kind} ${err.status ?? ""} ${err.message}` : err);
     return { ...fallbackAnswer(matched, "unavailable"), fallback: true };

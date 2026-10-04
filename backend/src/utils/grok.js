@@ -4,11 +4,24 @@ const DEFAULT_URL = "https://api.x.ai/v1";
 const DEFAULT_MODEL = "grok-3-mini";
 export const GROK_TIMEOUT_MS = 20000;
 
+// Reasoning models think before answering, and that thinking counts against
+// max_tokens. A short answer like ours needs little of it, so ask for less
+// (otherwise the budget can run out before any answer is written).
+// GROK_REASONING_EFFORT overrides it ("none" sends nothing).
+function defaultReasoningEffort(model) {
+  if (/^openai\/gpt-oss/.test(model)) return "low"; // Groq: gpt-oss-20b / 120b
+  if (/^grok-3-mini/.test(model)) return "low"; // xAI
+  return null;
+}
+
 export function grokConfig() {
+  const model = process.env.GROK_MODEL || DEFAULT_MODEL;
+  const effort = process.env.GROK_REASONING_EFFORT;
   return {
     apiKey: process.env.GROK_API_KEY || "",
     baseUrl: (process.env.GROK_API_URL || DEFAULT_URL).replace(/\/+$/, ""),
-    model: process.env.GROK_MODEL || DEFAULT_MODEL,
+    model,
+    reasoningEffort: effort === "none" ? null : effort || defaultReasoningEffort(model),
   };
 }
 
@@ -27,15 +40,24 @@ export class GrokError extends Error {
 // Swappable (tests replace `complete` with a fake).
 export const grokClient = {
   // messages: [{ role: "system" | "user" | "assistant", content }]
+  // json: ask the API to return a single JSON object (JSON mode).
   // Returns the assistant's reply text.
-  async complete(messages, { maxTokens = 700, temperature = 0.3 } = {}) {
-    const { apiKey, baseUrl, model } = grokConfig();
+  async complete(messages, { maxTokens = 1500, temperature = 0.3, json = false } = {}) {
+    const { apiKey, baseUrl, model, reasoningEffort } = grokConfig();
+    const body = {
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+      ...(json ? { response_format: { type: "json_object" } } : {}),
+    };
     let res;
     try {
       res = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(GROK_TIMEOUT_MS),
       });
     } catch (err) {
