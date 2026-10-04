@@ -50,29 +50,30 @@ export default function CreateItem() {
   }
 
   return (
-    <div className="max-w-md mx-auto mt-10 p-6 border rounded-lg">
-      <h2 className="text-2xl font-bold mb-4">List an item</h2>
-      {error && <p className="text-red-600 mb-3">{error}</p>}
+    <div className="card mx-4 my-8 p-6 sm:mx-auto sm:my-12 sm:max-w-2xl sm:p-8">
+      <h2 className="page-title">List an item</h2>
+      <p className="mt-1 mb-6 text-sm text-slate-500">Add clear photos and an honest description so renters know what to expect.</p>
+      {error && <p className="alert-error mb-4">{error}</p>}
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <input className="border p-2 rounded" placeholder="Title" required minLength={3} maxLength={100}
+        <input className="input" placeholder="Title" required minLength={3} maxLength={100}
           value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
         <FieldError message={fieldErrors.title} />
-        <textarea className="border p-2 rounded" placeholder="Description (min 10 characters)" required minLength={10} maxLength={2000}
+        <textarea className="input" placeholder="Description (min 10 characters)" required minLength={10} maxLength={2000}
           value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         <FieldError message={fieldErrors.description} />
-        <input className="border p-2 rounded" placeholder="Category (e.g. Electronics)" required minLength={2} maxLength={50}
+        <input className="input" placeholder="Category (e.g. Electronics)" required minLength={2} maxLength={50}
           value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
         <FieldError message={fieldErrors.category} />
-        <input className="border p-2 rounded" placeholder="Price per hour (₹)" type="number" required
+        <input className="input" placeholder="Price per hour (₹)" type="number" required
           min="0.01" max="100000" step="0.01"
           value={form.pricePerHour} onChange={(e) => setForm({ ...form, pricePerHour: e.target.value })} />
         <FieldError message={fieldErrors.pricePerHour} />
-        <input className="border p-2 rounded" placeholder="Location" required minLength={2} maxLength={200}
+        <input className="input" placeholder="Location" required minLength={2} maxLength={200}
           value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
         <FieldError message={fieldErrors.location} />
-        <label className="text-sm font-medium">
+        <label className="label">
           Refundable security deposit (₹)
-          <input className="border p-2 rounded w-full mt-1 font-normal" type="number" min="0" max="50000" step="0.01" required
+          <input className="input mt-1 font-normal" type="number" min="0" max="50000" step="0.01" required
             value={form.securityDeposit} onChange={(e) => setForm({ ...form, securityDeposit: e.target.value })} />
           <span className="block text-xs font-normal text-slate-500 mt-1">
             ₹0 to ₹50,000. Charged with the rental and refunded after return, minus any approved claims.
@@ -84,7 +85,7 @@ export default function CreateItem() {
           <MediaPicker files={mediaFiles} onChange={setMediaFiles} disabled={submitting} statuses={statuses} />
         </div>
         <FieldError message={fieldErrors.media} />
-        <button className="bg-slate-900 text-white py-2 rounded disabled:opacity-50" disabled={submitting}>
+        <button className="btn-primary w-full py-2.5" disabled={submitting}>
           {stage === "uploading" ? "Uploading media..." : submitting ? "Listing item..." : "List item"}
         </button>
       </form>

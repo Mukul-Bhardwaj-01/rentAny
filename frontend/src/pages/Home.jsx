@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import api, { getErrorMessage } from "../api/axios.js";
+import { Link } from "react-router-dom";
 import ItemCard from "../components/ItemCard.jsx";
+import { SkeletonGrid, EmptyState, ErrorState } from "../components/ui.jsx";
 
 const NO_FILTERS = { category: "", minPrice: "", maxPrice: "", area: "", sort: "newest" };
 const average = (i) => (i.ratingCount > 0 ? i.ratingSum / i.ratingCount : null);
@@ -69,24 +71,30 @@ export default function Home() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <form onSubmit={handleSearch} className="flex gap-2 mb-6">
+    <div className="page">
+      <header className="mb-6">
+        <h1 className="page-title">Rent anything, by the hour</h1>
+        <p className="mt-1 text-slate-500">Speakers, cameras, projectors and more — from people near you.</p>
+      </header>
+
+      <div className="card mb-8 p-4 sm:p-5">
+      <form onSubmit={handleSearch} className="flex gap-2">
         <input
-          className="border p-2 rounded flex-1"
+          className="input flex-1"
           placeholder="Search items (e.g. projector, camera)"
           maxLength={100}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button className="bg-slate-900 text-white px-4 rounded disabled:opacity-50" disabled={loading}>
+        <button className="btn-primary" disabled={loading}>
           Search
         </button>
       </form>
 
-      <div className="flex flex-wrap items-end gap-3 mb-6 text-sm">
+      <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:flex sm:flex-wrap sm:items-end">
         <label className="flex flex-col">
           <span className="text-slate-500 text-xs">Sort by</span>
-          <select className="border p-1.5 rounded" value={filters.sort} onChange={setFilter("sort")}>
+          <select className="input py-1.5" value={filters.sort} onChange={setFilter("sort")}>
             <option value="newest">Newest</option>
             <option value="price-asc">Price: low → high</option>
             <option value="price-desc">Price: high → low</option>
@@ -95,57 +103,65 @@ export default function Home() {
         </label>
         <label className="flex flex-col">
           <span className="text-slate-500 text-xs">Category</span>
-          <select className="border p-1.5 rounded" value={filters.category} onChange={setFilter("category")}>
+          <select className="input py-1.5" value={filters.category} onChange={setFilter("category")}>
             <option value="">All categories</option>
             {categories.map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
         </label>
-        <label className="flex flex-col">
+        <label className="col-span-2 flex flex-col sm:col-span-1">
           <span className="text-slate-500 text-xs">Price ₹/hr</span>
           <span className="flex items-center gap-1">
-            <input type="number" min="0" placeholder="Min" className="border p-1.5 rounded w-20"
+            <input type="number" min="0" placeholder="Min" className="input py-1.5 sm:w-24"
               value={filters.minPrice} onChange={setFilter("minPrice")} aria-label="Minimum price per hour" />
             <span className="text-slate-400">–</span>
-            <input type="number" min="0" placeholder="Max" className="border p-1.5 rounded w-20"
+            <input type="number" min="0" placeholder="Max" className="input py-1.5 sm:w-24"
               value={filters.maxPrice} onChange={setFilter("maxPrice")} aria-label="Maximum price per hour" />
           </span>
         </label>
-        <label className="flex flex-col">
+        <label className="col-span-2 flex flex-col sm:col-span-1">
           <span className="text-slate-500 text-xs">Area</span>
-          <input placeholder="e.g. Sector 17, Mohali" className="border p-1.5 rounded w-44"
+          <input placeholder="e.g. Sector 17, Mohali" className="input py-1.5 sm:w-48"
             maxLength={100} value={filters.area} onChange={setFilter("area")} />
         </label>
         {filtersActive && (
-          <button type="button" onClick={() => setFilters(NO_FILTERS)} className="text-blue-600 pb-1.5">
+          <button type="button" onClick={() => setFilters(NO_FILTERS)} className="link col-span-2 pb-1.5 text-left text-sm sm:col-span-1">
             Clear filters
           </button>
         )}
       </div>
+      </div>
 
       {loading ? (
-        <p>Loading items...</p>
+        <SkeletonGrid />
       ) : error ? (
-        <div className="text-red-600">
-          <p>{error}</p>
-          <button onClick={() => fetchItems(search.trim())} className="mt-2 underline">
-            Retry
-          </button>
-        </div>
+        <ErrorState message={error} onRetry={() => fetchItems(search.trim())} />
       ) : items.length === 0 ? (
-        <p className="text-slate-500">No items found. Be the first to list one!</p>
+        <EmptyState
+          icon="🔍"
+          title={search.trim() ? "No matching items" : "No listings yet"}
+          message={search.trim() ? "Try a different search word." : "Be the first to list something people can rent."}
+          action={<Link to="/create-item" className="btn-primary">List an item</Link>}
+        />
       ) : visible.length === 0 ? (
-        <p className="text-slate-500">
-          No listings match these filters.{" "}
-          <button onClick={() => setFilters(NO_FILTERS)} className="text-blue-600">Clear filters</button>
-        </p>
+        <EmptyState
+          icon="🎛️"
+          title="No listings match these filters"
+          message="Try widening the price range or picking another category."
+          action={<button onClick={() => setFilters(NO_FILTERS)} className="btn-secondary">Clear filters</button>}
+        />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {visible.map((item) => (
-            <ItemCard key={item.id} item={item} />
-          ))}
-        </div>
+        <>
+          <p className="mb-3 text-sm text-slate-500">
+            {visible.length} listing{visible.length === 1 ? "" : "s"}
+          </p>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {visible.map((item) => (
+              <ItemCard key={item.id} item={item} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

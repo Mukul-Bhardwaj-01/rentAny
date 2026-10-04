@@ -1,11 +1,15 @@
 import { Link } from "react-router-dom";
+import { EmptyState } from "../components/ui.jsx";
 
 export default function NotFound() {
   return (
-    <div className="max-w-md mx-auto mt-10 text-center">
-      <h2 className="text-2xl font-bold mb-2">Page not found</h2>
-      <p className="text-slate-500 mb-4">The page you are looking for does not exist.</p>
-      <Link to="/" className="text-blue-600">Back to home</Link>
+    <div className="page-narrow">
+      <EmptyState
+        icon="🧭"
+        title="Page not found"
+        message="The page you are looking for does not exist or has moved."
+        action={<Link to="/" className="btn-primary">Back to home</Link>}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import MediaGallery from "../components/MediaGallery.jsx";
 import ManageMedia from "../components/ManageMedia.jsx";
 import { mediaForItem } from "../utils/media.js";
 import ItemReviews from "../components/ItemReviews.jsx";
+import { LoadingState, ErrorState } from "../components/ui.jsx";
 import LocationMap from "../components/LocationMap.jsx";
 import { Stars, RatingBadge, ratingOf } from "../components/StarRating.jsx";
 import { formatPrice, formatDateTime, toDateTimeLocalValue } from "../utils/format.js";
@@ -69,12 +70,12 @@ export default function ItemDetail() {
     fetchItem();
   }, [id]);
 
-  if (loading) return <p className="text-center mt-10">Loading item...</p>;
+  if (loading) return <LoadingState label="Loading item…" />;
   if (loadError) {
     return (
-      <div className="max-w-md mx-auto mt-10 text-center">
-        <p className="text-red-600">{loadError}</p>
-        <Link to="/" className="text-blue-600">Back to home</Link>
+      <div className="page-narrow">
+        <ErrorState message={loadError} onRetry={fetchItem} />
+        <p className="mt-4 text-center"><Link to="/" className="link">Back to home</Link></p>
       </div>
     );
   }
@@ -110,19 +111,19 @@ export default function ItemDetail() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6 grid gap-8 md:grid-cols-2">
+    <div className="page grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div>
         <MediaGallery media={mediaForItem(item)} title={item.title} />
-        <h1 className="text-2xl font-bold mt-4">{item.title}</h1>
-        <p className="text-slate-500">{item.category} · {item.location}</p>
-        <p className="mt-2 text-xl font-bold">₹{formatPrice(item.pricePerHour)}/hr</p>
+        <h1 className="page-title mt-5">{item.title}</h1>
+        <p className="mt-1 text-slate-500">{item.category} · 📍 {item.location}</p>
+        <p className="mt-3"><span className="text-2xl font-bold text-slate-900">₹{formatPrice(item.pricePerHour)}</span><span className="text-slate-500"> / hour</span></p>
         <p className="mt-1">
           <Stars {...ratingOf(item.ratingSum, item.ratingCount)} />
         </p>
         {Number(item.securityDeposit) > 0 && (
           <p className="text-sm text-slate-600">Refundable security deposit: ₹{formatPrice(item.securityDeposit)}</p>
         )}
-        <p className="mt-4 whitespace-pre-line">{item.description}</p>
+        <p className="mt-5 whitespace-pre-line leading-relaxed text-slate-700">{item.description}</p>
         <LocationMap location={item.location} title={item.title} />
         <p className="mt-4 text-sm text-slate-500 flex flex-wrap items-center gap-2">
           <span>Listed by {item.owner?.name}</span>
@@ -138,30 +139,30 @@ export default function ItemDetail() {
       </div>
 
       <div>
-        <div className="border rounded-lg p-4">
-          <h2 className="text-lg font-semibold mb-3">Book this item</h2>
+        <div className="card p-5 lg:sticky lg:top-20">
+          <h2 className="mb-4 text-lg font-semibold text-slate-900">Book this item</h2>
 
           {isOwner ? (
             <p className="text-slate-600">
               This is your listing. Requests for it appear in{" "}
-              <Link to="/bookings?as=owner" className="text-blue-600">My bookings</Link>.
+              <Link to="/bookings?as=owner" className="link">My bookings</Link>.
             </p>
           ) : !item.isAvailable ? (
             <p className="text-slate-600">The owner has paused bookings for this item.</p>
           ) : !user ? (
             <p className="text-slate-600">
-              <Link to="/login" state={{ from: `/items/${item.id}` }} className="text-blue-600">Log in</Link>{" "}
+              <Link to="/login" state={{ from: `/items/${item.id}` }} className="link">Log in</Link>{" "}
               to request this item.
             </p>
           ) : (
             <>
-              {error && <p className="text-red-600 mb-3">{error}</p>}
+              {error && <p className="alert-error mb-3">{error}</p>}
               <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-                <label className="text-sm font-medium">
+                <label className="label">
                   Start time
                   <input
                     type="datetime-local"
-                    className="border p-2 rounded w-full mt-1 font-normal"
+                    className="input mt-1 font-normal"
                     required
                     min={toDateTimeLocalValue(new Date(Date.now() + MIN_LEAD_MS))}
                     max={toDateTimeLocalValue(new Date(Date.now() + MAX_ADVANCE_MS))}
@@ -170,11 +171,11 @@ export default function ItemDetail() {
                   />
                 </label>
                 <FieldError message={fieldErrors.startTime} />
-                <label className="text-sm font-medium">
+                <label className="label">
                   Hours
                   <input
                     type="number"
-                    className="border p-2 rounded w-full mt-1 font-normal"
+                    className="input mt-1 font-normal"
                     required
                     min={MIN_HOURS}
                     max={MAX_HOURS}
@@ -185,7 +186,7 @@ export default function ItemDetail() {
                 </label>
                 <FieldError message={fieldErrors.hours} />
                 <textarea
-                  className="border p-2 rounded"
+                  className="input"
                   placeholder="Note for the owner (optional)"
                   maxLength={500}
                   value={form.note}
@@ -197,7 +198,7 @@ export default function ItemDetail() {
                 {clash && <p className="text-sm text-red-600">This time overlaps an existing booking.</p>}
 
                 <button
-                  className="bg-slate-900 text-white py-2 rounded disabled:opacity-50"
+                  className="btn-primary w-full py-2.5"
                   disabled={submitting || !!clash || !end}
                 >
                   {submitting ? "Sending request..." : "Request booking"}
@@ -207,8 +208,8 @@ export default function ItemDetail() {
           )}
         </div>
 
-        <div className="mt-6">
-          <h3 className="font-semibold mb-2">Already booked (next 30 days)</h3>
+        <div className="card mt-4 p-5">
+          <h3 className="mb-2 font-semibold text-slate-900">Already booked (next 30 days)</h3>
           {booked.length === 0 ? (
             <p className="text-sm text-slate-500">No bookings yet. Any time is free.</p>
           ) : (
@@ -236,14 +237,14 @@ function PriceBreakdown({ item, hours, end }) {
   const total = rental + PLATFORM_FEE_PAISE + deposit;
   const rs = (p) => `₹${formatPrice(p / 100)}`;
   return (
-    <div className="bg-slate-50 rounded p-3 text-sm space-y-0.5">
+    <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
       <p>Until {formatDateTime(end)}</p>
       <p className="flex justify-between"><span>Rental (₹{formatPrice(item.pricePerHour)} × {hours} hr)</span><span>{rs(rental)}</span></p>
       <p className="flex justify-between"><span>Platform fee</span><span>{rs(PLATFORM_FEE_PAISE)}</span></p>
       {deposit > 0 && (
         <p className="flex justify-between"><span>Security deposit (refundable)</span><span>{rs(deposit)}</span></p>
       )}
-      <p className="flex justify-between font-semibold border-t pt-1"><span>Total</span><span>{rs(total)}</span></p>
+      <p className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-900"><span>Total</span><span>{rs(total)}</span></p>
       <p className="text-xs text-slate-500 pt-1">
         You pay online after the owner accepts.{deposit > 0 ? " The deposit is refunded after the item is returned, minus any approved deductions." : ""}
       </p>
@@ -277,7 +278,7 @@ function DepositEditor({ item, onSaved }) {
     return (
       <p className="mt-4 text-sm">
         Security deposit: ₹{formatPrice(item.securityDeposit || 0)}{" "}
-        <button onClick={() => setEditing(true)} className="text-blue-600">Change</button>
+        <button onClick={() => setEditing(true)} className="link">Change</button>
       </p>
     );
   }
@@ -286,10 +287,10 @@ function DepositEditor({ item, onSaved }) {
       <label>
         Security deposit (₹)
         <input type="number" min="0" max="50000" step="0.01" required value={value}
-          onChange={(e) => setValue(e.target.value)} className="border p-1 rounded w-32 ml-2" />
+          onChange={(e) => setValue(e.target.value)} className="input ml-2 w-32 py-1" />
       </label>
-      <button disabled={saving} className="bg-slate-900 text-white px-3 py-1 rounded disabled:opacity-50">Save</button>
-      <button type="button" onClick={() => setEditing(false)} className="border px-3 py-1 rounded">Cancel</button>
+      <button disabled={saving} className="btn-primary btn-sm">Save</button>
+      <button type="button" onClick={() => setEditing(false)} className="btn-secondary btn-sm">Cancel</button>
       <p className="w-full text-xs text-slate-500">Applies to new booking requests only.</p>
       {error && <p className="w-full text-xs text-red-600">{error}</p>}
     </form>

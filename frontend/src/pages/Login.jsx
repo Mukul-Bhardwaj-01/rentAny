@@ -32,22 +32,23 @@ export default function Login() {
   }
 
   return (
-    <div className="max-w-md mx-auto mt-10 p-6 border rounded-lg">
-      <h2 className="text-2xl font-bold mb-4">Login</h2>
-      {error && <p className="text-red-600 mb-3">{error}</p>}
+    <div className="card mx-4 my-10 p-6 sm:mx-auto sm:my-16 sm:max-w-md sm:p-8">
+      <h2 className="page-title">Welcome back</h2>
+      <p className="mt-1 mb-6 text-sm text-slate-500">Log in to rent or list items.</p>
+      {error && <p className="alert-error mb-4">{error}</p>}
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <input className="border p-2 rounded" placeholder="Email" type="email" required maxLength={254}
+        <input className="input" placeholder="Email" type="email" required maxLength={254}
           value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         <FieldError message={fieldErrors.email} />
-        <input className="border p-2 rounded" placeholder="Password" type="password" required
+        <input className="input" placeholder="Password" type="password" required
           value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         <FieldError message={fieldErrors.password} />
-        <button className="bg-slate-900 text-white py-2 rounded disabled:opacity-50" disabled={submitting}>
+        <button className="btn-primary w-full py-2.5" disabled={submitting}>
           {submitting ? "Logging in..." : "Login"}
         </button>
       </form>
-      <p className="mt-3 text-sm">
-        No account yet? <Link to="/register" className="text-blue-600">Register</Link>
+      <p className="mt-6 text-center text-sm text-slate-600">
+        No account yet? <Link to="/register" className="link">Register</Link>
       </p>
     </div>
   );

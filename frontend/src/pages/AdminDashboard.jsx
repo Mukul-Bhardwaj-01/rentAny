@@ -4,6 +4,7 @@ import api, { getErrorMessage, getFieldErrors } from "../api/axios.js";
 import { formatPrice, formatDateTime } from "../utils/format.js";
 import FieldError from "../components/FieldError.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import { LoadingState, EmptyState, ErrorState } from "../components/ui.jsx";
 
 const rs = (v) => `₹${formatPrice(v)}`;
 const REASON = { DAMAGE: "Damage", LATE_RETURN: "Late return", MISSING_PARTS: "Missing parts", OTHER: "Other" };
@@ -35,9 +36,9 @@ export default function AdminDashboard() {
     </button>
   );
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Admin panel</h1>
-      <div className="flex border-b mb-4">
+    <div className="page max-w-5xl">
+      <h1 className="page-title mb-6">Admin panel</h1>
+      <div className="mb-5 flex border-b border-slate-200">
         {tabBtn("claims", "Deposit disputes")}
         {tabBtn("overview", "Overview")}
       </div>
@@ -79,12 +80,12 @@ function Claims() {
         </select>
         <button onClick={load} className="text-blue-600 ml-2">Refresh</button>
       </div>
-      {notice && <p className="mb-3 text-green-700">{notice}</p>}
-      {error && <p className="mb-3 text-red-600">{error}</p>}
+      {notice && <p className="alert-success mb-4">{notice}</p>}
+      {error && <p className="alert-error mb-4">{error}</p>}
       {loading ? (
-        <p>Loading claims…</p>
+        <LoadingState label="Loading claims…" />
       ) : claims.length === 0 ? (
-        <p className="text-slate-500">No claims here.</p>
+        <EmptyState icon="✅" title="Nothing to review" message="No claims match this filter." />
       ) : (
         <ul className="space-y-3">
           {claims.map((c) => (
@@ -123,7 +124,7 @@ function ClaimCard({ claim, onResolved }) {
   }
 
   return (
-    <li className="border rounded-lg p-4 text-sm">
+    <li className="card p-4 text-sm sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="font-semibold">
@@ -215,11 +216,11 @@ function Overview() {
     }
   }
 
-  if (error) return <p className="text-red-600">{error}</p>;
-  if (!data) return <p>Loading overview…</p>;
+  if (error) return <ErrorState message={error} onRetry={load} />;
+  if (!data) return <LoadingState label="Loading overview…" />;
   const { counts } = data;
   const stat = (label, value) => (
-    <div className="border rounded-lg p-3">
+    <div className="card p-4">
       <p className="text-xs text-slate-500">{label}</p>
       <p className="text-2xl font-semibold">{value}</p>
     </div>

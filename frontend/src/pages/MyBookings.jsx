@@ -4,6 +4,7 @@ import api, { getErrorMessage } from "../api/axios.js";
 import ItemImage from "../components/ItemImage.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import PaymentPanel from "../components/PaymentPanel.jsx";
+import { LoadingState, EmptyState } from "../components/ui.jsx";
 import ReviewPanel from "../components/ReviewPanel.jsx";
 import { RatingBadge } from "../components/StarRating.jsx";
 import { formatPrice, formatDateTime } from "../utils/format.js";
@@ -149,7 +150,7 @@ export default function MyBookings() {
     const start = new Date(b.startTime).getTime();
     const end = new Date(b.endTime).getTime();
     const busy = actingId === b.id;
-    const btn = "px-3 py-1 rounded text-sm disabled:opacity-50";
+    const btn = "btn btn-sm";
     const actions = [];
 
     if (as === "owner" && b.status === "PENDING") {
@@ -267,16 +268,16 @@ export default function MyBookings() {
   );
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">My bookings</h1>
+    <div className="page max-w-4xl">
+      <h1 className="page-title mb-6">My bookings</h1>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b mb-4">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200">
         <div className="flex">
           {tab("renter", "My rentals")}
           {tab("owner", "Requests for my items")}
         </div>
         <select
-          className="border p-1 rounded text-sm mb-2"
+          className="input mb-2 w-auto py-1.5"
           value={status}
           onChange={(e) => updateParams({ status: e.target.value })}
         >
@@ -287,31 +288,39 @@ export default function MyBookings() {
         </select>
       </div>
 
-      {notice && <p className="mb-3 text-green-700">{notice}</p>}
-      {error && <p className="mb-3 text-red-600">{error}</p>}
+      {notice && <p className="alert-success mb-4">{notice}</p>}
+      {error && <p className="alert-error mb-4">{error}</p>}
 
       {loading ? (
-        <p>Loading bookings...</p>
+        <LoadingState label="Loading bookings…" />
       ) : bookings.length === 0 ? (
-        <p className="text-slate-500">
-          {as === "renter" ? (
-            <>No bookings yet. <Link to="/" className="text-blue-600">Browse items</Link></>
-          ) : (
-            "No requests for your items yet."
-          )}
-        </p>
+        as === "renter" ? (
+          <EmptyState
+            icon="🧾"
+            title={status ? "No bookings with this status" : "No rentals yet"}
+            message="When you request an item, it shows up here with its payment and status."
+            action={<Link to="/" className="btn-primary">Browse items</Link>}
+          />
+        ) : (
+          <EmptyState
+            icon="📬"
+            title={status ? "No requests with this status" : "No requests yet"}
+            message="Requests from renters for your listings will appear here."
+            action={<Link to="/create-item" className="btn-secondary">List an item</Link>}
+          />
+        )
       ) : (
         <ul className="space-y-3">
           {bookings.map((b) => (
             <li
               key={b.id}
               id={`booking-${b.id}`}
-              className={`border rounded-lg p-3 flex gap-3 ${b.id === highlightId ? "ring-2 ring-blue-500" : ""}`}
+              className={`card flex flex-col gap-4 p-4 sm:flex-row ${b.id === highlightId ? "ring-2 ring-blue-500" : ""}`}
             >
-              <ItemImage src={b.item.imageUrl} alt={b.item.title} className="w-24 h-24 object-cover rounded" />
+              <ItemImage src={b.item.imageUrl} alt={b.item.title} className="h-40 w-full shrink-0 rounded-lg object-cover sm:h-24 sm:w-24" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
-                  <Link to={`/items/${b.item.id}`} className="font-semibold hover:underline">
+                  <Link to={`/items/${b.item.id}`} className="font-semibold text-slate-900 hover:underline">
                     {b.item.title}
                   </Link>
                   <StatusBadge status={b.status} />
