@@ -1,127 +1,164 @@
-# rentANY
+# rentAny
 
-"rentAny" : a peer-to-peer rental marketplace where users can list, discover, and rent everyday items on an hourly basis, where users can search for nearby items, compare rental options, book for a specific duration, make secure payments, and manage the complete rental lifecycle from booking to return.
+**rentAny** is a peer-to-peer rental marketplace where people list everyday items (speakers, projectors, cameras, tools…) and others rent them **by the hour** — with booking requests, online payment, a refundable security deposit, reviews, maps and an AI rental assistant.
 
-The software is being built as part of the minor project for the session July 2026 - December 2026 (7th semester)
+Minor project · 7th semester, B.E. Computer Science & Engineering · UIET, Panjab University · Session July–December 2026
 
-Team members:
+### Team
 
-1. Mukul Bhardwaj - UE233066
-2. Prashant Yadav - UE233075
-3. Pratham Mahajan - UE233076
+| Name | Roll no. |
+|---|---|
+| Mukul Bhardwaj | UE233066 |
+| Prashant Yadav | UE233075 |
+| Pratham Mahajan | UE233076 |
 
-Features in this repo will be added as and when they are built, following the gantt chart available in the "rentAny workflow.pdf"
+The original plan is in [`rentAny workflow.pdf`](rentAny%20workflow.pdf); the updated plan, progress and Gantt chart up to the final evaluation are in [`docs/rentAny-workflow-v2.md`](docs/rentAny-workflow-v2.md).
 
-# Mid-term build
+---
 
-This covers the phases due by end of September per the project Gantt chart:
-Requirement Analysis, Frontend Development, Backend & API Development,
-Database Integration, and Authentication & Image Upload.
+## Features (current build)
 
-**Not included yet (later phases, Oct–Nov):** booking/payment/security
-deposit, admin panel, maps, AI chatbot, ratings.
+**Accounts**
+- Register / log in with JWT authentication; passwords hashed with bcrypt.
+- Phone number required at sign-up; shared between renter and owner only once a booking is paid.
+- Roles: `USER` and `ADMIN`.
 
-## What's built
+**Listings**
+- Create listings with title, description, category, hourly price, location and a refundable security deposit (₹0 – ₹50,000).
+- Up to 10 photos/videos per listing (8 images, 2 videos), uploaded **directly from the browser to Cloudinary** with server-signed upload tickets; the server verifies every upload before attaching it.
+- Item page with media gallery and lightbox, location map with **Get directions**, owner rating and reviews.
+- Home page search, sorting (newest, price, rating) and filters (category, price range, area).
 
-- User registration & login (JWT + bcrypt password hashing)
-- Owners can list an item with title, description, category, price/hour,
-  location and an image (uploaded to Cloudinary)
-- Anyone can browse and search listings on the home page
-- Protected route so only logged-in users can create a listing
+**Bookings**
+- Hourly booking requests (1–72 h, up to 30 days ahead) with live availability.
+- Owner accepts or rejects; overlapping requests are auto-rejected.
+- **Double booking is impossible**: enforced by a PostgreSQL exclusion constraint, not only by application code.
+- Full lifecycle: requested → accepted → paid/confirmed → handed over → returned, with cancellation and automatic expiry.
 
-## Folder structure
+**Payments & security deposit** (Razorpay, test mode)
+- Fixed ₹49 platform fee; amounts snapshotted on the booking so later price changes never affect it.
+- Server-created orders, signature check **and** server-side verification with Razorpay; signed webhooks; reconciliation if the browser callback is lost.
+- Cancellation refunds per a versioned policy (owner cancels → full refund; renter ≥ 24 h before → rental + deposit; < 24 h → 50 % rental + deposit).
+- Deposit held after return for a 48-hour claim window; owner can claim (damage, late return, missing parts), renter accepts or disputes, admin resolves; the rest is refunded automatically.
+- Idempotent, append-only payment audit log; safe refund retries.
+
+**Reviews & ratings**
+- After a completed rental: renter rates the owner and item, owner rates the renter (1–5 stars + optional comment, one each per booking).
+- Average ratings shown on listings, item pages and bookings.
+
+**Notifications**
+- In-app notification bell with unread count and pop-up toasts for every important booking, payment, refund, claim and review event.
+
+**AI rental assistant**
+- Chat widget that suggests listings for an occasion, need or budget, using an LLM through the backend (key never exposed to the browser).
+- Recommendations are **grounded in the live catalog**: the AI can only pick from real, available listings chosen by the server, and every pick is re-checked. Falls back to catalog search if the AI is unavailable.
+
+**Admin panel**
+- Review and resolve deposit disputes; overview of users, listings, bookings and refunds needing attention (with retry).
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, React Router, Tailwind CSS |
+| Backend | Node.js, Express |
+| Database | PostgreSQL with Prisma ORM |
+| Auth | JWT, bcrypt |
+| Media | Cloudinary (signed direct uploads) |
+| Payments | Razorpay Standard Checkout (test mode) |
+| AI assistant | Grok (xAI) or Groq — any OpenAI-compatible chat API |
+| Maps | Google Maps embed + directions links |
+| Tests | Node.js built-in test runner (`node:test`) |
 
 ```
 rentAny/
-  backend/     Node.js + Express + Prisma + PostgreSQL API
-  frontend/    React + Vite + Tailwind CSS
+  backend/    Express API, Prisma schema & migrations, tests
+  frontend/   React app (Vite + Tailwind)
+  docs/       Updated workflow and plan
 ```
 
-## 1. Install prerequisites
+---
 
-You need these installed on your machine:
+## Running the project locally
 
-1. **Node.js** (v18 or later) — https://nodejs.org
-2. **PostgreSQL** (v14 or later) — https://www.postgresql.org/download/
-   - After installing, create a database. Easiest way, in a terminal:
-     ```
-     psql -U postgres
-     CREATE DATABASE rentany;
-     \q
-     ```
-3. A free **Cloudinary** account — https://cloudinary.com/users/register/free
-   - After signing up, your Dashboard home page shows three values you'll
-     need: **Cloud name**, **API Key**, **API Secret**.
+### Prerequisites
+- Node.js 18+ (developed on Node 22)
+- PostgreSQL 14+ with an empty database (e.g. `CREATE DATABASE rentany;`)
+- Free accounts: Cloudinary, Razorpay (**test mode**), and optionally an AI API key (xAI Grok or Groq)
 
-## 2. Backend setup
-
+### Backend
 ```
 cd backend
 npm install
-cp .env.example .env
+cp .env.example .env      # then fill in the values below
+npx prisma migrate deploy  # creates all tables and constraints
+npm run dev                # http://localhost:5000  (health: /api/health)
 ```
 
-Open `.env` and fill in:
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | yes | PostgreSQL connection string |
+| `JWT_SECRET` | yes | Any long random string |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | yes | Media uploads |
+| `CLIENT_URL` | no | Frontend origin(s) allowed by CORS (default `http://localhost:5173`) |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | for payments | **Test-mode** keys (`rzp_test_…`); live keys are refused |
+| `RAZORPAY_WEBHOOK_SECRET` | for webhooks | Same secret as configured on the Razorpay webhook |
+| `CRON_SECRET` | for the scheduled sweep | Protects `/api/internal/payments/sweep` |
+| `GROK_API_KEY` | for the AI assistant | xAI or Groq key; without it the assistant uses catalog search |
+| `GROK_API_URL`, `GROK_MODEL` | no | Defaults: `https://api.x.ai/v1`, `grok-3-mini`. For Groq use `https://api.groq.com/openai/v1` and a Groq model name |
 
-- `DATABASE_URL` — your Postgres connection string (update the password and
-  database name to match what you created above)
-- `JWT_SECRET` — any long random string (e.g. mash your keyboard)
-- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` —
-  from your Cloudinary dashboard
-- `CLIENT_URL` — the frontend URL allowed to call the API (CORS). Leave it as
-  `http://localhost:5173` for local development; comma-separate multiple URLs.
+Never commit `backend/.env` (it is git-ignored).
 
-The server refuses to start and lists what's missing if any required value
-is empty.
-
-Then create the database tables (this applies every migration in
-`prisma/migrations`) and start the server:
-
-```
-npx prisma migrate dev
-npm run dev
-```
-
-You should see `RentAny backend running on http://localhost:5000`.
-Visit `http://localhost:5000/api/health` in a browser — it should return
-`{"status":"ok"}`.
-
-## 3. Frontend setup
-
-Open a **new terminal** (leave the backend running):
-
+### Frontend
 ```
 cd frontend
 npm install
-npm run dev
+npm run dev                # http://localhost:5173
 ```
+Optional `frontend/.env`: `VITE_API_URL` (default `http://localhost:5000/api`).
 
-The frontend talks to `http://localhost:5000/api` by default. To point it
-elsewhere (e.g. a deployed backend), copy `frontend/.env.example` to
-`frontend/.env` and set `VITE_API_URL`.
+### Making a user an admin
+```sql
+UPDATE "User" SET role = 'ADMIN' WHERE email = 'someone@example.com';
+```
+(or edit the user in `npx prisma studio`), then log in again.
 
-Open the URL Vite prints (usually `http://localhost:5173`).
+### Tests
+```
+cd backend
+npm test
+```
+116 automated API tests cover authentication, listings and media, bookings and concurrency, notifications, payments and refunds (with a fake Razorpay), deposit claims, reviews, the AI assistant (with a fake AI) and the admin API. They run against the database in `DATABASE_URL` and clean up after themselves.
 
-## 4. Try it out
+---
 
-1. Register a new account
-2. Click "List an item", fill the form, attach an image, submit
-3. Go back to the home page — your item should appear in the grid
-4. Try the search box
+## Project timeline (actual)
 
-## 5. How to run it?
+| Period | Work completed |
+|---|---|
+| Aug 2026 | Requirement analysis and system design; project workflow and Gantt chart prepared |
+| 4–13 Sep 2026 | Repository set up; React + Express skeleton; PostgreSQL + Prisma; registration/login (JWT, bcrypt); item listings with Cloudinary image upload; search |
+| 2 Oct 2026 | Validation and error handling across the API; CORS and configuration checks; booking module (requests, accept/reject, availability, overlap prevention, expiry); required phone numbers; persistent notifications with live updates |
+| 3 Oct 2026 | Multiple photos/videos per listing; secure direct-to-Cloudinary uploads |
+| 4 Oct 2026 | Razorpay payments and refundable security deposits with dispute handling; reviews and ratings; AI rental assistant; item maps and directions; Home filters and sorting; admin panel; UI/UX polish |
 
-1. Open the backend folder in a powershell terminal and enter "npm run dev"
-2. Open the frontend folder in another powershell terminal and enter "npm run dev"
-3. Open http://localhost:5173 in your browser. That's the app.
+Compared with the original Gantt chart, the planned scope (booking, payments & deposit, admin & disputes) is implemented ahead of schedule; the remaining time is for hardening, deployment and new features (below).
 
-## Note:
+## Future scope (towards the final evaluation)
 
-- Passwords are hashed with bcrypt before being stored — never stored in
-  plain text.
-- Auth uses stateless JWTs (7-day expiry), sent as `Authorization: Bearer <token>`.
-- Prisma is the ORM, `backend/prisma/schema.prisma` is the single source of
-  truth for the database schema — run `npx prisma studio` to view your data
-  in a browser-based table editor.
-- Image files never touch our own server disk; multer streams them directly
-  to Cloudinary and we store only the resulting URL.
+- **Deployment** on Vercel with a hosted PostgreSQL database, and end-to-end verification of Razorpay webhooks.
+- **Profiles and listing management**: user profile pages, editing/pausing listings, booking and earnings history views.
+- **Location upgrade**: coordinates for listings and a true "nearest to me" sort.
+- **AI assistant improvements**: better prompts, saved conversations, multi-item plans for an occasion.
+- **Trust & safety**: photo evidence for deposit claims, reporting listings, email notifications.
+- **Owner payouts** (Razorpay Route) — currently out of scope in test mode.
+- Wider testing (browser/E2E), accessibility and performance work, final report and demonstration.
+
+---
+
+## Security notes
+- Secrets live only in `backend/.env` (never in the frontend or the repository).
+- Payment results, prices and uploads are always verified on the server; the browser is never trusted.
+- Contact details are shared only between the two parties of a paid booking.
