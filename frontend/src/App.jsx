@@ -11,6 +11,8 @@ import NotFound from "./pages/NotFound.jsx";
 import ChatWidget from "./components/ChatWidget.jsx";
 import AdminRoute from "./components/AdminRoute.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
+import Profile from "./pages/Profile.jsx";
+import EditItem from "./pages/EditItem.jsx";
 
 export default function App() {
   return (
@@ -29,6 +31,22 @@ export default function App() {
           }
         />
         <Route path="/items/:id" element={<ItemDetail />} />
+        <Route
+          path="/items/:id/edit"
+          element={
+            <ProtectedRoute>
+              <EditItem />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/bookings"
           element={

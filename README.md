@@ -22,12 +22,14 @@ The original plan is in [`rentAny workflow.pdf`](rentAny%20workflow.pdf); the up
 - Register / log in with JWT authentication; passwords hashed with bcrypt.
 - Phone number required at sign-up; shared between renter and owner only once a booking is paid.
 - Roles: `USER` and `ADMIN`.
+- **Profile dashboard**: account details (editable name and phone), ratings as owner and renter, all of the user's listings and every rental they have taken.
 
 **Listings**
 - Create listings with title, description, category, hourly price, location and a refundable security deposit (₹0 – ₹50,000).
 - Up to 10 photos/videos per listing (8 images, 2 videos), uploaded **directly from the browser to Cloudinary** with server-signed upload tickets; the server verifies every upload before attaching it.
 - Item page with media gallery and lightbox, location map with **Get directions**, owner rating and reviews.
 - Home page search, sorting (newest, price, rating) and filters (category, price range, area).
+- Owners can **edit** every detail of a listing, **pause** it (hidden from search, no new requests) or **delete** it. Deleting is a soft delete: the listing disappears everywhere, open requests are declined with a notification, and past bookings, payments and reviews stay intact. It is refused while a booking is accepted, paid or in progress.
 
 **Bookings**
 - Hourly booking requests (1–72 h, up to 30 days ahead) with live availability.
@@ -130,7 +132,7 @@ UPDATE "User" SET role = 'ADMIN' WHERE email = 'someone@example.com';
 cd backend
 npm test
 ```
-116 automated API tests cover authentication, listings and media, bookings and concurrency, notifications, payments and refunds (with a fake Razorpay), deposit claims, reviews, the AI assistant (with a fake AI) and the admin API. They run against the database in `DATABASE_URL` and clean up after themselves.
+124 automated API tests cover authentication, listings and media, bookings and concurrency, notifications, payments and refunds (with a fake Razorpay), deposit claims, reviews, the AI assistant (with a fake AI) and the admin API. They run against the database in `DATABASE_URL` and clean up after themselves.
 
 ---
 
@@ -142,14 +144,14 @@ npm test
 | 4–13 Sep 2026 | Repository set up; React + Express skeleton; PostgreSQL + Prisma; registration/login (JWT, bcrypt); item listings with Cloudinary image upload; search |
 | 2 Oct 2026 | Validation and error handling across the API; CORS and configuration checks; booking module (requests, accept/reject, availability, overlap prevention, expiry); required phone numbers; persistent notifications with live updates |
 | 3 Oct 2026 | Multiple photos/videos per listing; secure direct-to-Cloudinary uploads |
-| 4 Oct 2026 | Razorpay payments and refundable security deposits with dispute handling; reviews and ratings; AI rental assistant; item maps and directions; Home filters and sorting; admin panel; UI/UX polish |
+| 4 Oct 2026 | Razorpay payments and refundable security deposits with dispute handling; reviews and ratings; AI rental assistant; item maps and directions; Home filters and sorting; admin panel; UI/UX polish; profile dashboard with listing edit, pause and delete |
 
 Compared with the original Gantt chart, the planned scope (booking, payments & deposit, admin & disputes) is implemented ahead of schedule; the remaining time is for hardening, deployment and new features (below).
 
 ## Future scope (towards the final evaluation)
 
 - **Deployment** on Vercel with a hosted PostgreSQL database, and end-to-end verification of Razorpay webhooks.
-- **Profiles and listing management**: user profile pages, editing/pausing listings, booking and earnings history views.
+- **Public profiles and earnings**: public profile pages with reviews, and an earnings history for owners.
 - **Location upgrade**: coordinates for listings and a true "nearest to me" sort.
 - **AI assistant improvements**: better prompts, saved conversations, multi-item plans for an occasion.
 - **Trust & safety**: photo evidence for deposit claims, reporting listings, email notifications.

@@ -55,9 +55,11 @@ const TEMPLATES = {
       ? `${b.owner.name} accepted your request for "${b.item.title}". Pay ${rs(b.totalPayable)} by ${when(b.paymentDueAt)} to confirm it.`
       : `${b.owner.name} accepted your request for "${b.item.title}".`,
   }),
-  BOOKING_REJECTED: (b) => ({
+  BOOKING_REJECTED: (b, _role, x) => ({
     title: "Booking request declined",
-    message: `${b.owner.name} declined your request for "${b.item.title}".`,
+    message: x?.listingRemoved
+      ? `Your request for "${b.item.title}" was declined because ${b.owner.name} removed the listing.`
+      : `${b.owner.name} declined your request for "${b.item.title}".`,
   }),
   BOOKING_AUTO_REJECTED: (b) => ({
     title: "Time slot no longer available",

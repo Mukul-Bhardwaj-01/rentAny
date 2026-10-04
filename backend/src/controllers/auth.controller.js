@@ -50,13 +50,41 @@ export async function login(req, res) {
   });
 }
 
+const profileSelect = {
+  id: true, name: true, email: true, phone: true, role: true, createdAt: true,
+  ownerRatingSum: true, ownerRatingCount: true, renterRatingSum: true, renterRatingCount: true,
+};
+
+const average = (sum, count) => (count ? Math.round((sum / count) * 10) / 10 : null);
+
+function profileResponse(user, counts) {
+  const { ownerRatingSum, ownerRatingCount, renterRatingSum, renterRatingCount, ...rest } = user;
+  return {
+    ...rest,
+    ownerRating: { average: average(ownerRatingSum, ownerRatingCount), count: ownerRatingCount },
+    renterRating: { average: average(renterRatingSum, renterRatingCount), count: renterRatingCount },
+    ...(counts ? { stats: counts } : {}),
+  };
+}
+
 // GET /api/auth/me  (requires requireAuth middleware)
+// Account details for the profile page, with ratings and simple totals.
 export async function getProfile(req, res) {
-  const user = await prisma.user.findUnique({
-    where: { id: req.userId },
-    select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true },
-  });
+  const user = await prisma.user.findUnique({ where: { id: req.userId }, select: profileSelect });
   // Token is valid but the account no longer exists.
   if (!user) throw new AppError(401, "Account not found");
-  res.json(user);
+
+  const [listings, rentals, completedRentals, completedAsOwner] = await Promise.all([
+    prisma.item.count({ where: { ownerId: req.userId, deletedAt: null } }),
+    prisma.booking.count({ where: { renterId: req.userId } }),
+    prisma.booking.count({ where: { renterId: req.userId, status: "COMPLETED" } }),
+    prisma.booking.count({ where: { ownerId: req.userId, status: "COMPLETED" } }),
+  ]);
+  res.json(profileResponse(user, { listings, rentals, completedRentals, completedAsOwner }));
+}
+
+// PATCH /api/auth/me  (requireAuth + updateProfileValidator)  body: { name?, phone? }
+export async function updateProfile(req, res) {
+  const user = await prisma.user.update({ where: { id: req.userId }, data: req.body, select: profileSelect });
+  res.json(profileResponse(user));
 }

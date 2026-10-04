@@ -65,6 +65,10 @@ model Item {
   ratingSum       Int      @default(0)
   ratingCount     Int      @default(0)
   createdAt       DateTime @default(now())
+  // Set when the owner deletes the listing. The row stays because bookings,
+  // payments and reviews reference it; deleted listings are hidden everywhere
+  // and never available (CHECK constraint in the migration).
+  deletedAt       DateTime?
 
   owner         User     @relation(fields: [ownerId], references: [id])
   ownerId       Int
@@ -73,6 +77,8 @@ model Item {
   media         ItemMedia[]
   mediaUploads  MediaUpload[]
   reviews       Review[]
+
+  @@index([ownerId])
 }
 
 enum MediaType {

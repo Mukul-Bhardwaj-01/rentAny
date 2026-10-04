@@ -8,6 +8,8 @@ import {
   addItemMedia,
   deleteItemMedia,
   updateSecurityDeposit,
+  updateItem,
+  deleteItem,
 } from "../controllers/item.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { legacyImageUpload } from "../middleware/upload.middleware.js";
@@ -19,6 +21,7 @@ import {
   itemMediaParamsValidator,
   registerMediaValidator,
   securityDepositValidator,
+  updateItemValidator,
 } from "../validators/item.validators.js";
 import { getItemAvailability } from "../controllers/booking.controller.js";
 import { getItemReviews } from "../controllers/review.controller.js";
@@ -40,6 +43,23 @@ router.get(
 
 // JSON with uploaded media ids, or (legacy) multipart with one "image" file.
 router.post("/", requireAuth, legacyImageUpload, validate(createItemValidator), asyncHandler(createItem));
+
+// Owner edits the listing (text, price, deposit, paused or not) or deletes it.
+router.patch(
+  "/:id",
+  requireAuth,
+  validate(itemIdValidator, "params"),
+  asyncHandler(requireItemOwner),
+  validate(updateItemValidator),
+  asyncHandler(updateItem)
+);
+router.delete(
+  "/:id",
+  requireAuth,
+  validate(itemIdValidator, "params"),
+  asyncHandler(requireItemOwner),
+  asyncHandler(deleteItem)
+);
 
 // Owner-only media management. Files are uploaded straight to Cloudinary
 // (POST /api/media/signatures with itemId); this attaches them.

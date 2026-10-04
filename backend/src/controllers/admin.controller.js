@@ -13,8 +13,8 @@ export async function getOverview(req, res) {
     await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { role: "ADMIN" } }),
-      prisma.item.count(),
-      prisma.item.count({ where: { isAvailable: true } }),
+      prisma.item.count({ where: { deletedAt: null } }),
+      prisma.item.count({ where: { isAvailable: true, deletedAt: null } }),
       prisma.booking.groupBy({ by: ["status"], _count: { _all: true } }),
       prisma.depositClaim.count({ where: { status: "OPEN" } }),
       prisma.depositClaim.count({ where: { status: "DISPUTED" } }),
@@ -33,6 +33,7 @@ export async function getOverview(req, res) {
         take: 10,
       }),
       prisma.item.findMany({
+        where: { deletedAt: null },
         select: {
           id: true, title: true, category: true, pricePerHour: true, isAvailable: true, createdAt: true,
           owner: { select: { id: true, name: true } },

@@ -119,8 +119,8 @@ export async function getItemAvailability(req, res) {
   const { id } = req.params;
   const { from, to } = req.query;
 
-  const item = await prisma.item.findUnique({ where: { id }, select: { id: true, isAvailable: true } });
-  if (!item) throw new AppError(404, "Item not found");
+  const item = await prisma.item.findUnique({ where: { id }, select: { id: true, isAvailable: true, deletedAt: true } });
+  if (!item || item.deletedAt) throw new AppError(404, "Item not found");
 
   const booked = await prisma.booking.findMany({
     where: { itemId: id, status: { in: BLOCKING_STATUSES }, ...overlaps(from, to) },
@@ -139,7 +139,7 @@ export async function createBooking(req, res) {
   await expireOverdueBookings();
 
   const item = await prisma.item.findUnique({ where: { id: itemId } });
-  if (!item) throw new AppError(404, "Item not found");
+  if (!item || item.deletedAt) throw new AppError(404, "Item not found");
   if (item.ownerId === req.userId) throw new AppError(400, "You cannot book your own item");
   if (!item.isAvailable) throw new AppError(409, "This item is not accepting bookings right now");
 
@@ -168,6 +168,12 @@ export async function createBooking(req, res) {
   const totalPayable = rentalAmount.add(PLATFORM_FEE).add(securityDeposit);
 
   const booking = await prisma.$transaction(async (tx) => {
+    // Re-check under a shared lock: the owner may have paused or deleted the
+    // listing since it was read (deleting takes FOR UPDATE on the same row).
+    const [live] = await tx.$queryRaw`SELECT "isAvailable", "deletedAt" FROM "Item" WHERE id = ${itemId} FOR SHARE`;
+    if (!live || live.deletedAt) throw new AppError(404, "Item not found");
+    if (!live.isAvailable) throw new AppError(409, "This item is not accepting bookings right now");
+
     const created = await tx.booking.create({
       data: {
         itemId,
@@ -255,7 +261,8 @@ export async function acceptBooking(req, res) {
     // Without this, two concurrent accepts deadlock: each waits on the other's
     // accepted row (exclusion check) while auto-rejecting it. The second accept
     // now waits, then finds its booking already auto-rejected (409).
-    await tx.$queryRaw`SELECT id FROM "Item" WHERE id = ${booking.itemId} FOR UPDATE`;
+    const [item] = await tx.$queryRaw`SELECT "deletedAt" FROM "Item" WHERE id = ${booking.itemId} FOR UPDATE`;
+    if (!item || item.deletedAt) throw new AppError(409, "This listing has been removed");
 
     // Booking_no_overlap is still the final safety net (mapped to 409).
     // The renter now has 12 hours (never past the start) to pay.

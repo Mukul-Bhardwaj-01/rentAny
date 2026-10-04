@@ -10,8 +10,8 @@ export async function createUploadSignatures(req, res) {
   const { itemId, types } = req.body;
 
   if (itemId) {
-    const item = await prisma.item.findUnique({ where: { id: itemId }, select: { ownerId: true } });
-    if (!item) throw new AppError(404, "Item not found");
+    const item = await prisma.item.findUnique({ where: { id: itemId }, select: { ownerId: true, deletedAt: true } });
+    if (!item || item.deletedAt) throw new AppError(404, "Item not found");
     if (item.ownerId !== req.userId) throw new AppError(403, "Only the owner can add media to this listing");
   }
 

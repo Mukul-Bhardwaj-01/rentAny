@@ -63,11 +63,17 @@ export function createItemValidator(input) {
   checkMediaIds(input, values, errors, { required: false });
   checkSecurityDeposit(input, values, errors, { required: false });
 
+  checkPrice(input, values, errors, { required: true });
+
+  return { values, errors };
+}
+
+function checkPrice(input, values, errors, { required }) {
   // Multipart form fields always arrive as strings.
   const rawPrice = typeof input.pricePerHour === "string" ? input.pricePerHour.trim() : input.pricePerHour;
   const price = Number(rawPrice);
   if (rawPrice === undefined || rawPrice === null || rawPrice === "") {
-    errors.pricePerHour = "Price per hour is required";
+    if (required) errors.pricePerHour = "Price per hour is required";
   } else if (!Number.isFinite(price)) {
     errors.pricePerHour = "Price per hour must be a number";
   } else if (price <= 0) {
@@ -78,7 +84,35 @@ export function createItemValidator(input) {
     // Kept as a fixed 2-decimal string so it maps exactly onto Decimal(10,2).
     values.pricePerHour = price.toFixed(2);
   }
+}
 
+const EDITABLE_FIELDS = ["title", "description", "category", "location", "pricePerHour", "securityDeposit", "isAvailable"];
+
+// PATCH /api/items/:id  body: any of the editable fields (at least one).
+// Media are managed through the /media routes. Existing bookings keep the
+// price and deposit they were requested with.
+export function updateItemValidator(input) {
+  const values = {};
+  const errors = {};
+
+  const unknown = Object.keys(input).filter((k) => !EDITABLE_FIELDS.includes(k));
+  if (unknown.length) errors[unknown[0]] = `${unknown[0]} cannot be changed here`;
+
+  const present = (f) => input[f] !== undefined;
+  if (present("title")) checkString(input, "title", "Title", { min: 3, max: 100 }, values, errors);
+  if (present("description")) checkString(input, "description", "Description", { min: 10, max: 2000 }, values, errors);
+  if (present("category")) checkString(input, "category", "Category", { min: 2, max: 50 }, values, errors);
+  if (present("location")) checkString(input, "location", "Location", { min: 2, max: 200 }, values, errors);
+  if (present("pricePerHour")) checkPrice(input, values, errors, { required: true });
+  if (present("securityDeposit")) checkSecurityDeposit(input, values, errors, { required: true });
+  if (present("isAvailable")) {
+    if (typeof input.isAvailable !== "boolean") errors.isAvailable = "isAvailable must be true or false";
+    else values.isAvailable = input.isAvailable;
+  }
+
+  if (Object.keys(errors).length === 0 && Object.keys(values).length === 0) {
+    errors.form = "Nothing to update";
+  }
   return { values, errors };
 }
 

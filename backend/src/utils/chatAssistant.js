@@ -57,6 +57,7 @@ export const publicItem = (i) => ({
 export async function findCandidates({ text, userId, filters = {} }) {
   const base = {
     isAvailable: true,
+    deletedAt: null,
     ...(userId ? { ownerId: { not: userId } } : {}),
     ...(filters.maxPricePerHour ? { pricePerHour: { lte: filters.maxPricePerHour } } : {}),
     ...(filters.category ? { category: { equals: filters.category, mode: "insensitive" } } : {}),

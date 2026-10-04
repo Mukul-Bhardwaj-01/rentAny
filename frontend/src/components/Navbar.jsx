@@ -49,7 +49,20 @@ export default function Navbar() {
           {user && (
             <>
               <div className="mx-2"><NotificationBell /></div>
-              <span className="mr-2 max-w-[10rem] truncate text-sm text-slate-400">Hi, {user.name}</span>
+              <NavLink
+                to="/profile"
+                title="My profile"
+                className={({ isActive }) =>
+                  `mr-2 flex max-w-[12rem] items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
+                    isActive ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  }`
+                }
+              >
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-slate-900">
+                  {user.name?.[0]?.toUpperCase() || "?"}
+                </span>
+                <span className="truncate">{user.name}</span>
+              </NavLink>
               <button onClick={handleLogout} className="btn-sm btn border border-slate-700 text-slate-200 hover:bg-slate-800">
                 Log out
               </button>
@@ -78,6 +91,7 @@ export default function Navbar() {
           {links}
           {user && (
             <>
+              <NavLink to="/profile" className={linkClass}>My profile</NavLink>
               <span className="px-3 pt-2 text-sm text-slate-400">Signed in as {user.name}</span>
               <button onClick={handleLogout} className="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white">
                 Log out

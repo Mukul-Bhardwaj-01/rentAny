@@ -4,7 +4,6 @@ import api, { getErrorMessage, getFieldErrors } from "../api/axios.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import FieldError from "../components/FieldError.jsx";
 import MediaGallery from "../components/MediaGallery.jsx";
-import ManageMedia from "../components/ManageMedia.jsx";
 import { mediaForItem } from "../utils/media.js";
 import ItemReviews from "../components/ItemReviews.jsx";
 import { LoadingState, ErrorState } from "../components/ui.jsx";
@@ -130,10 +129,16 @@ export default function ItemDetail() {
           <RatingBadge sum={item.owner?.ownerRatingSum} count={item.owner?.ownerRatingCount} />
         </p>
         {isOwner && (
-          <>
-            <DepositEditor item={item} onSaved={(securityDeposit) => setItem({ ...item, securityDeposit })} />
-            <ManageMedia item={item} onChange={(updated) => setItem({ ...item, ...updated })} />
-          </>
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm text-slate-600">
+              This is your listing{!item.isAvailable && <> · <span className="font-medium text-slate-800">paused</span></>}.
+              Edit its details, photos and availability, or delete it.
+            </p>
+            <div className="flex gap-2">
+              <Link to={`/items/${item.id}/edit`} className="btn-primary btn-sm">Edit listing</Link>
+              <Link to="/profile" className="btn-secondary btn-sm">My listings</Link>
+            </div>
+          </div>
         )}
         <ItemReviews itemId={item.id} />
       </div>
@@ -252,47 +257,3 @@ function PriceBreakdown({ item, hours, end }) {
   );
 }
 
-// Owner: set the refundable deposit for future bookings (₹0 – ₹50,000).
-function DepositEditor({ item, onSaved }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(String(Number(item.securityDeposit || 0)));
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function save(e) {
-    e.preventDefault();
-    setSaving(true);
-    setError("");
-    try {
-      const res = await api.patch(`/items/${item.id}/security-deposit`, { securityDeposit: value });
-      onSaved(res.data.securityDeposit);
-      setEditing(false);
-    } catch (err) {
-      setError(getFieldErrors(err).securityDeposit || getErrorMessage(err, "Could not save the deposit"));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (!editing) {
-    return (
-      <p className="mt-4 text-sm">
-        Security deposit: ₹{formatPrice(item.securityDeposit || 0)}{" "}
-        <button onClick={() => setEditing(true)} className="link">Change</button>
-      </p>
-    );
-  }
-  return (
-    <form onSubmit={save} className="mt-4 text-sm flex flex-wrap items-center gap-2">
-      <label>
-        Security deposit (₹)
-        <input type="number" min="0" max="50000" step="0.01" required value={value}
-          onChange={(e) => setValue(e.target.value)} className="input ml-2 w-32 py-1" />
-      </label>
-      <button disabled={saving} className="btn-primary btn-sm">Save</button>
-      <button type="button" onClick={() => setEditing(false)} className="btn-secondary btn-sm">Cancel</button>
-      <p className="w-full text-xs text-slate-500">Applies to new booking requests only.</p>
-      {error && <p className="w-full text-xs text-red-600">{error}</p>}
-    </form>
-  );
-}

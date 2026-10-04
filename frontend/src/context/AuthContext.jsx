@@ -42,8 +42,13 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
+  // After the profile is edited (e.g. a new name), so the navbar updates too.
+  function updateUser(changes) {
+    setUser((u) => (u ? { ...u, ...changes } : u));
+  }
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
